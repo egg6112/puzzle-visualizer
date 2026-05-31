@@ -400,6 +400,23 @@ h1 {
 .api-note { font-size: 0.7rem; color: var(--text-muted); }
 .api-note code { font-family: 'Courier New', Consolas, monospace; font-size: 0.68rem; background: var(--surface2); color: var(--accent-hi); padding: 0.1em 0.35em; border-radius: 3px; }
 
+/* ── Reduced motion ─────────────────────────────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  .tile {
+    transition: none;
+  }
+  .tile.moved {
+    animation: none;
+  }
+  .spinner {
+    animation: none;
+    border-top-color: var(--accent);
+  }
+  .global-error {
+    animation: none;
+  }
+}
+
 /* ── Responsive ──────────────────────────────────────────────────────────── */
 @media (max-width: 860px) {
   .body-layout          { flex-direction: column; }
