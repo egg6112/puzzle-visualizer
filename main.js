@@ -329,7 +329,7 @@ async function doSolve() {
 
   try {
     // ウォームアップ（コールドスタート対策）
-    setGlobalStatus('APIを起動中…（初回は30〜50秒かかる場合があります）');
+    setGlobalStatus('Waking up API… (first request may take 30–50 s)');
     try {
       await fetch(`${API_BASE}/warmup`);
     } catch (e) {
