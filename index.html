@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>15-Puzzle Algorithm Comparator</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="app">
+
+    <header>
+      <h1>15-Puzzle Algorithm Comparator</h1>
+      <p class="subtitle">
+        A* vs IDA* &middot; same board &middot; Manhattan + Linear Conflict heuristic
+        &middot; <a href="http://localhost:8000/docs" target="_blank" rel="noopener">API docs ↗</a>
+      </p>
+    </header>
+
+    <div class="body-layout">
+
+      <!-- ── Shared controls ──────────────────────────────────────────────── -->
+      <footer class="controls">
+
+        <div class="btn-row action-row">
+          <button id="btn-shuffle" class="btn secondary-btn">Shuffle</button>
+          <button id="btn-solve"   class="btn accent-btn">Solve</button>
+          <button id="btn-reset"   class="btn secondary-btn">Reset</button>
+        </div>
+
+        <div class="max-time-row">
+          <span class="max-time-label">Max time</span>
+          <input id="max-time-input" type="number" min="1" max="300" value="30" step="1">
+          <span class="max-time-unit">s / solver</span>
+        </div>
+
+        <div class="controls-divider"></div>
+
+        <!-- Replay mode toggle -->
+        <div class="mode-row btn-row">
+          <button id="btn-mode-explore"  class="btn mode-btn active-mode">Explore Replay</button>
+          <button id="btn-mode-solution" class="btn mode-btn">Solution Replay</button>
+        </div>
+
+        <input id="seek-slider" type="range" min="0" max="0" value="0" disabled>
+
+        <div class="step-row">
+          <span id="step-counter">&#8212;</span>
+          <span id="global-status" class="status">Ready</span>
+        </div>
+
+        <div class="btn-row playback-row">
+          <button id="btn-prev"  class="btn icon-btn"    title="Step back">&#9664;&#9664;</button>
+          <button id="btn-play"  class="btn primary-btn">&#9654; Play</button>
+          <button id="btn-next"  class="btn icon-btn"    title="Step forward">&#9654;&#9654;</button>
+        </div>
+
+        <div class="speed-row">
+          <span class="speed-label-text">Speed</span>
+          <input id="speed-slider" type="range" min="1" max="10" value="5">
+          <span id="speed-display" class="speed-val">2.5&times;</span>
+        </div>
+
+        <!-- Network / API error strip -->
+        <div id="global-error" class="global-error hidden" role="alert">
+          <span id="global-error-msg"></span>
+          <button id="global-error-close" class="global-error-close" aria-label="Dismiss">&#215;</button>
+        </div>
+
+        <p class="api-note">
+          Solve requires: <code>cd puzzle-api-test &amp;&amp; uvicorn main:app --reload</code>
+        </p>
+
+      </footer>
+
+      <!-- ── Dual panels ──────────────────────────────────────────────────── -->
+      <div class="panels">
+
+        <!-- A* panel -->
+        <section class="panel">
+          <div class="panel-header">
+            <span class="algo-badge astar-badge">A*</span>
+            <span class="algo-desc">Best-first search</span>
+          </div>
+          <div class="grid" id="grid-astar">
+            <div id="loading-astar" class="loading-overlay hidden" aria-live="polite">
+              <div class="spinner" aria-hidden="true"></div>
+              <span>Solving&hellip;</span>
+            </div>
+          </div>
+          <div class="panel-stats">
+            <div class="stat"><span class="stat-name">States Explored</span><span id="astar-explored"  class="stat-val">&#8212;</span></div>
+            <div class="stat"><span class="stat-name">Optimal Moves</span>  <span id="astar-moves"     class="stat-val">&#8212;</span></div>
+            <div class="stat"><span class="stat-name">Manhattan Dist</span> <span id="astar-h"         class="stat-val">0</span></div>
+            <div class="stat"><span class="stat-name">Time</span>           <span id="astar-time"      class="stat-val">&#8212;</span></div>
+          </div>
+          <div id="astar-status" class="panel-status waiting">Waiting</div>
+        </section>
+
+        <!-- IDA* panel -->
+        <section class="panel">
+          <div class="panel-header">
+            <span class="algo-badge idastar-badge">IDA*</span>
+            <span class="algo-desc">Iterative deepening</span>
+          </div>
+          <div class="grid" id="grid-idastar">
+            <div id="loading-idastar" class="loading-overlay hidden" aria-live="polite">
+              <div class="spinner" aria-hidden="true"></div>
+              <span>Solving&hellip;</span>
+            </div>
+          </div>
+          <div class="panel-stats">
+            <div class="stat"><span class="stat-name">States Explored</span><span id="idastar-explored" class="stat-val">&#8212;</span></div>
+            <div class="stat"><span class="stat-name">Optimal Moves</span>  <span id="idastar-moves"    class="stat-val">&#8212;</span></div>
+            <div class="stat"><span class="stat-name">Manhattan Dist</span> <span id="idastar-h"        class="stat-val">0</span></div>
+            <div class="stat"><span class="stat-name">Time</span>           <span id="idastar-time"     class="stat-val">&#8212;</span></div>
+          </div>
+          <div id="idastar-status" class="panel-status waiting">Waiting</div>
+        </section>
+
+      </div><!-- /.panels -->
+
+    </div><!-- /.body-layout -->
+
+  </div>
+  <script src="main.js"></script>
+</body>
+</html>
