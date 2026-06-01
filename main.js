@@ -46,10 +46,6 @@ let panelAlgos = ['astar', 'wdidastar'];
 // results keyed by algo key; undefined = not yet solved
 let results = {};
 
-// h values from last API response; hWd=null means not yet received from server
-let hManhattan = 0;
-let hWd        = null;
-
 // tile DOM elements per panel: tileEls[panelIdx][value 1-15] = <div>
 const tileEls = [{}, {}];
 
@@ -63,6 +59,70 @@ function manhattan(st) {
     d += Math.abs((i >> 2) - (v >> 2)) + Math.abs((i & 3) - (v & 3));
   }
   return d;
+}
+
+// ── Walking Distance precomputation ──────────────────────────────────────────
+// Mirrors solver.py: _build_wd_table / _row_config / _col_config
+
+function buildWdTable() {
+  const goal = new Array(SIZE * SIZE).fill(0);
+  for (let i = 0; i < SIZE; i++) {
+    goal[i * SIZE + i] = i < SIZE - 1 ? SIZE : SIZE - 1;
+  }
+  const goalKey = goal.join(',') + ',' + (SIZE - 1);
+
+  const table = new Map([[goalKey, 0]]);
+  const queue = [{ T: goal, br: SIZE - 1, dist: 0 }];
+  let head = 0;
+
+  while (head < queue.length) {
+    const { T, br, dist } = queue[head++];
+    for (const delta of [-1, 1]) {
+      const nbr = br + delta;
+      if (nbr < 0 || nbr >= SIZE) continue;
+      for (let g = 0; g < SIZE; g++) {
+        if (T[nbr * SIZE + g] > 0) {
+          const nT = T.slice();
+          nT[nbr * SIZE + g]--;
+          nT[br * SIZE + g]++;
+          const nKey = nT.join(',') + ',' + nbr;
+          if (!table.has(nKey)) {
+            table.set(nKey, dist + 1);
+            queue.push({ T: nT, br: nbr, dist: dist + 1 });
+          }
+        }
+      }
+    }
+  }
+  return table;
+}
+
+const _WD_TABLE = buildWdTable();
+
+function rowConfig(state) {
+  const T = new Array(SIZE * SIZE).fill(0);
+  let blankRow = 0;
+  for (let i = 0; i < 16; i++) {
+    const val = state[i];
+    if (val === 0) { blankRow = i >> 2; }
+    else { T[(i >> 2) * SIZE + ((val - 1) >> 2)]++; }
+  }
+  return T.join(',') + ',' + blankRow;
+}
+
+function colConfig(state) {
+  const T = new Array(SIZE * SIZE).fill(0);
+  let blankCol = 0;
+  for (let i = 0; i < 16; i++) {
+    const val = state[i];
+    if (val === 0) { blankCol = i & 3; }
+    else { T[(i & 3) * SIZE + ((val - 1) & 3)]++; }
+  }
+  return T.join(',') + ',' + blankCol;
+}
+
+function walkingDistance(state) {
+  return (_WD_TABLE.get(rowConfig(state)) ?? 0) + (_WD_TABLE.get(colConfig(state)) ?? 0);
 }
 
 function getNeighbors(st) {
@@ -170,7 +230,7 @@ function renderPanel(p, prevStep) {
   }
   if (prevSt) flashPanel(p, prevSt, st);
   placePanel(p, st);
-  updateHBar(p);
+  updateHBar(p, st);
 }
 
 function renderAll(prevStep = null) {
@@ -181,21 +241,15 @@ function renderAll(prevStep = null) {
 
 // ── h-bar update ──────────────────────────────────────────────────────────────
 
-function updateHBar(p) {
-  const mh      = hManhattan;
-  const wdKnown = hWd !== null;
-  const hcompare = document.getElementById('p' + p + '-hcompare');
-
-  document.getElementById('p' + p + '-hmh').textContent = mh;
-  document.getElementById('p' + p + '-hwd').textContent = wdKnown ? hWd : '—';
-
-  hcompare.classList.toggle('hidden', !wdKnown);
-  if (!wdKnown) return;
-
-  const wd    = hWd;
+function updateHBar(p, st) {
+  const mh    = manhattan(st);
+  const wd    = walkingDistance(st);
   const total = Math.max(mh + wd, 1);
   const mhPct = Math.round((mh / total) * 100);
 
+  document.getElementById('p' + p + '-hmh').textContent = mh;
+  document.getElementById('p' + p + '-hwd').textContent = wd;
+  document.getElementById('p' + p + '-hcompare').classList.remove('hidden');
   document.getElementById('p' + p + '-mhlabel').textContent = 'MH:' + mh;
   document.getElementById('p' + p + '-wdlabel').textContent = 'WD:' + wd;
   document.getElementById('p' + p + '-mhbar').style.width = mhPct + '%';
@@ -420,9 +474,8 @@ function setBusy(busy) {
 
 function doShuffle() {
   pause(); clearGlobalError();
-  board    = randomShuffle();
-  results  = {};
-  hManhattan = manhattan(board); hWd = null;
+  board   = randomShuffle();
+  results = {};
   for (let p = 0; p < 2; p++) { setPanelResult(p); setPanelStatus(p, 'Waiting', 'waiting'); }
   updateComparisonTable();
   step = 0; renderAll();
@@ -458,9 +511,6 @@ async function doSolve() {
     }
 
     const data = await res.json();
-
-    hManhattan = data.h_manhattan ?? manhattan(board);
-    hWd        = data.h_wd        ?? 0;
 
     // Store results with pre-built paths
     for (const key of ALGO_KEYS) {
@@ -505,9 +555,8 @@ async function doSolve() {
 
 function doReset() {
   pause(); clearGlobalError();
-  board = GOAL.slice();
+  board   = GOAL.slice();
   results = {};
-  hManhattan = 0; hWd = null;
   for (let p = 0; p < 2; p++) { setPanelResult(p); setPanelStatus(p, 'Waiting', 'waiting'); }
   updateComparisonTable();
   step = 0; renderAll();
