@@ -1,118 +1,133 @@
-// 15-Puzzle Algorithm Comparator
-// Two panels (A* / IDA*) share the same board and step counter.
-// Solving is delegated to POST /compare on the FastAPI server.
+// 15-Puzzle Algorithm Comparator — 4-algorithm edition
+// Panels show any of: A* / IDA* / WD+A* / WD+IDA*, selectable via dropdown.
 
 const API_BASE = "https://puzzle-api-m99y.onrender.com";
 const API_URL  = API_BASE + '/compare';
 
 const SIZE = 4;
-const CELL = 80;   // px per grid cell  →  4 × 80 = 320 px grid
-const GAP  = 3;    // px between tile edge and cell boundary
+const CELL = 56;   // px per grid cell  → 4 × 56 = 224 px
+const GAP  = 3;    // px tile offset inside cell
 
-const GOAL = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 0];
-const KEYS = ['astar', 'idastar'];
+const GOAL      = [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,0];
+const ALGO_KEYS = ['astar','idastar','wdastar','wdidastar'];
 
-// ── Shared animation state ────────────────────────────────────────────────────
-let state      = GOAL.slice(); // current board (frozen at solve-time; mutated by shuffle/reset)
+const ALGO_LABELS = {
+  astar:     'A*',
+  idastar:   'IDA*',
+  wdastar:   'WD+A*',
+  wdidastar: 'WD+IDA*',
+};
+const ALGO_DESC = {
+  astar:     'Best-first search',
+  idastar:   'Iterative deepening',
+  wdastar:   'WD heuristic, A*',
+  wdidastar: 'WD heuristic, IDA*',
+};
+const ALGO_BADGE = {
+  astar:     'b-a',
+  idastar:   'b-ida',
+  wdastar:   'b-wda',
+  wdidastar: 'b-wida',
+};
+
+const MOVE_DELTA = { up:[-1,0], down:[1,0], left:[0,-1], right:[0,1] };
+
+// ── Shared state ──────────────────────────────────────────────────────────────
+let board      = GOAL.slice();
 let step       = 0;
 let playing    = false;
 let timer      = null;
-let speed      = 400; // ms
-let replayMode = 'explore'; // 'solution' | 'explore'
+let speed      = 400;
+let replayMode = 'explore';
 
-// ── Per-algorithm state ───────────────────────────────────────────────────────
-const panels = {
-  astar:   { tileEls: {}, path: null, exploredPath: null, error: null },
-  idastar: { tileEls: {}, path: null, exploredPath: null, error: null },
-};
+// panelAlgos[i] = which algo key panel i is currently showing
+let panelAlgos = ['astar', 'wdidastar'];
+
+// results keyed by algo key; undefined = not yet solved
+let results = {};
+
+// h values from last API response; hWd=null means not yet received from server
+let hManhattan = 0;
+let hWd        = null;
+
+// tile DOM elements per panel: tileEls[panelIdx][value 1-15] = <div>
+const tileEls = [{}, {}];
 
 // ── Puzzle helpers ────────────────────────────────────────────────────────────
 
 function manhattan(st) {
   let d = 0;
   for (let i = 0; i < 16; i++) {
-    if (st[i] === 0) continue;
+    if (!st[i]) continue;
     const v = st[i] - 1;
-    d += Math.abs(Math.floor(i / SIZE) - Math.floor(v / SIZE))
-       + Math.abs((i % SIZE) - (v % SIZE));
+    d += Math.abs((i >> 2) - (v >> 2)) + Math.abs((i & 3) - (v & 3));
   }
   return d;
 }
 
 function getNeighbors(st) {
-  const z = st.indexOf(0), r = Math.floor(z / SIZE), c = z % SIZE;
-  const result = [];
-  for (const [dr, dc] of [[-1, 0], [1, 0], [0, -1], [0, 1]]) {
-    const nr = r + dr, nc = c + dc;
-    if (nr >= 0 && nr < SIZE && nc >= 0 && nc < SIZE) {
-      const s = st.slice();
-      [s[z], s[nr * SIZE + nc]] = [s[nr * SIZE + nc], s[z]];
-      result.push(s);
+  const z = st.indexOf(0), r = z >> 2, c = z & 3, ns = [];
+  for (const [dr,dc] of [[-1,0],[1,0],[0,-1],[0,1]]) {
+    const nr = r+dr, nc = c+dc;
+    if (nr>=0&&nr<SIZE&&nc>=0&&nc<SIZE) {
+      const s=st.slice(); [s[z],s[nr*SIZE+nc]]=[s[nr*SIZE+nc],s[z]]; ns.push(s);
     }
   }
-  return result;
+  return ns;
 }
 
-// Random walk from goal — always solvable, no parity check needed.
 function randomShuffle() {
   let st = GOAL.slice();
   for (let i = 0; i < 150; i++) {
     const ns = getNeighbors(st);
-    st = ns[Math.floor(Math.random() * ns.length)];
+    st = ns[Math.floor(Math.random()*ns.length)];
   }
   return st;
 }
-
-// Reconstruct the full list of board states from the API's move list.
-const MOVE_DELTA = { up: [-1, 0], down: [1, 0], left: [0, -1], right: [0, 1] };
 
 function buildPath(initial, moves) {
   const path = [initial.slice()];
   let cur = initial.slice();
   for (const m of moves) {
     const z = cur.indexOf(0);
-    const [dr, dc] = MOVE_DELTA[m];
-    const ni = (Math.floor(z / SIZE) + dr) * SIZE + (z % SIZE + dc);
+    const [dr,dc] = MOVE_DELTA[m];
+    const ni = (Math.floor(z/SIZE)+dr)*SIZE+(z%SIZE+dc);
     const nxt = cur.slice();
-    [nxt[z], nxt[ni]] = [nxt[ni], nxt[z]];
+    [nxt[z],nxt[ni]] = [nxt[ni],nxt[z]];
     path.push(nxt);
     cur = nxt;
   }
   return path;
 }
 
-// Convert API's explored_log (array of 16-element arrays) into a path array.
-function buildExploredPath(exploredLog) {
-  if (!exploredLog || exploredLog.length === 0) return null;
-  return exploredLog.map(board => board.slice());
+function buildExploredPath(log) {
+  return (log && log.length) ? log.map(b => b.slice()) : null;
 }
 
-// ── Grid initialisation ───────────────────────────────────────────────────────
+// ── Grid init ─────────────────────────────────────────────────────────────────
 
 function initGrids() {
-  for (const key of KEYS) {
-    const grid    = document.getElementById('grid-' + key);
-    const overlay = document.getElementById('loading-' + key);
-    const tiles   = panels[key].tileEls;
-
-    [...grid.children].forEach(el => { if (el !== overlay) el.remove(); });
-
+  for (let p = 0; p < 2; p++) {
+    const grid    = document.getElementById('grid-' + p);
+    const overlay = document.getElementById('loading-' + p);
+    for (const el of [...grid.children]) { if (el !== overlay) el.remove(); }
+    tileEls[p] = {};
     for (let v = 1; v <= 15; v++) {
       const el = document.createElement('div');
       el.className   = 'tile';
       el.textContent = v;
-      tiles[v]       = el;
-      grid.insertBefore(el, overlay); // tiles sit below the overlay in z-order
+      tileEls[p][v]  = el;
+      grid.insertBefore(el, overlay);
     }
   }
 }
 
 // ── Rendering ─────────────────────────────────────────────────────────────────
 
-function placePanel(key, st) {
-  const tiles = panels[key].tileEls;
+function placePanel(p, st) {
+  const tiles = tileEls[p];
   for (let i = 0; i < 16; i++) {
-    if (st[i] === 0) continue;
+    if (!st[i]) continue;
     const el = tiles[st[i]];
     el.style.left = (i % SIZE) * CELL + GAP + 'px';
     el.style.top  = Math.floor(i / SIZE) * CELL + GAP + 'px';
@@ -120,13 +135,12 @@ function placePanel(key, st) {
   }
 }
 
-function flashPanel(key, from, to) {
-  const tiles = panels[key].tileEls;
+function flashPanel(p, from, to) {
   for (let i = 0; i < 16; i++) {
-    if (to[i] !== 0 && to[i] !== from[i]) {
-      const el = tiles[to[i]];
+    if (to[i] && to[i] !== from[i]) {
+      const el = tileEls[p][to[i]];
       el.classList.remove('moved');
-      void el.offsetWidth; // restart CSS animation
+      void el.offsetWidth;
       el.classList.add('moved');
       setTimeout(() => el.classList.remove('moved'), 400);
       return;
@@ -134,107 +148,205 @@ function flashPanel(key, from, to) {
   }
 }
 
-function renderPanel(key, st, prevSt) {
-  if (prevSt) flashPanel(key, prevSt, st);
-  placePanel(key, st);
-  document.getElementById(key + '-h').textContent = manhattan(st);
+function activePath(p) {
+  const key = panelAlgos[p];
+  const r   = results[key];
+  if (!r || r.error) return null;
+  return replayMode === 'explore' ? r.exploredPath : r.path;
 }
 
-// Render both panels at the current `step`, animating from `prevStep` if given.
-function renderAll(prevStep = null) {
-  for (const key of KEYS) {
-    const p = panels[key];
-    let st, prevSt = null;
-
-    const activePath = replayMode === 'explore' ? p.exploredPath : p.path;
-
-    if (activePath) {
-      const idx = Math.min(step, activePath.length - 1);
-      st = activePath[idx];
-      if (prevStep !== null) {
-        const pi = Math.min(prevStep, activePath.length - 1);
-        if (pi !== idx) prevSt = activePath[pi];
-      }
-    } else {
-      st = state; // no solution / no explored log: show the starting board
+function renderPanel(p, prevStep) {
+  const path = activePath(p);
+  let st, prevSt = null;
+  if (path) {
+    const idx = Math.min(step, path.length - 1);
+    st = path[idx];
+    if (prevStep !== null) {
+      const pi = Math.min(prevStep, path.length - 1);
+      if (pi !== idx) prevSt = path[pi];
     }
-
-    renderPanel(key, st, prevSt);
+  } else {
+    st = board;
   }
+  if (prevSt) flashPanel(p, prevSt, st);
+  placePanel(p, st);
+  updateHBar(p);
+}
+
+function renderAll(prevStep = null) {
+  renderPanel(0, prevStep);
+  renderPanel(1, prevStep);
   syncProgress();
+}
+
+// ── h-bar update ──────────────────────────────────────────────────────────────
+
+function updateHBar(p) {
+  const mh      = hManhattan;
+  const wdKnown = hWd !== null;
+  const hcompare = document.getElementById('p' + p + '-hcompare');
+
+  document.getElementById('p' + p + '-hmh').textContent = mh;
+  document.getElementById('p' + p + '-hwd').textContent = wdKnown ? hWd : '—';
+
+  hcompare.classList.toggle('hidden', !wdKnown);
+  if (!wdKnown) return;
+
+  const wd    = hWd;
+  const total = Math.max(mh + wd, 1);
+  const mhPct = Math.round((mh / total) * 100);
+
+  document.getElementById('p' + p + '-mhlabel').textContent = 'MH:' + mh;
+  document.getElementById('p' + p + '-wdlabel').textContent = 'WD:' + wd;
+  document.getElementById('p' + p + '-mhbar').style.width = mhPct + '%';
+  document.getElementById('p' + p + '-wdbar').style.width = (100 - mhPct) + '%';
+  document.getElementById('p' + p + '-hnote').textContent =
+    wd > mh ? 'WD tighter' : wd === mh ? 'equal' : 'MH tighter';
 }
 
 // ── Stats & status ────────────────────────────────────────────────────────────
 
-function setPanelStats(key, data) {
-  const el = id => document.getElementById(key + '-' + id);
-  if (data.states_explored !== undefined)
-    el('explored').textContent = data.states_explored.toLocaleString();
-  if (data.optimal_moves !== undefined)
-    el('moves').textContent = data.optimal_moves;
-  if (data.time_ms !== undefined)
-    el('time').textContent = (data.time_ms / 1000).toFixed(3) + ' s';
+function setPanelResult(p) {
+  const key = panelAlgos[p];
+  const r   = results[key];
+
+  if (!r) {
+    document.getElementById('p'+p+'-explored').textContent = '—';
+    document.getElementById('p'+p+'-moves').textContent    = '—';
+    document.getElementById('p'+p+'-time').textContent     = '—';
+    setPanelStatus(p, 'Waiting', 'waiting');
+    return;
+  }
+
+  if (r.error) {
+    const t = (r.time_ms / 1000).toFixed(2) + ' s';
+    document.getElementById('p'+p+'-explored').textContent = r.states_explored ? r.states_explored.toLocaleString() : '—';
+    document.getElementById('p'+p+'-moves').textContent    = '—';
+    document.getElementById('p'+p+'-time').textContent     = t;
+    const isTimeout = r.error.startsWith('Timeout');
+    setPanelStatus(p, isTimeout ? '⏱ Timeout' : '❌ State limit exceeded',
+      isTimeout ? 'error-timeout' : 'error-limit');
+    return;
+  }
+
+  const exploredEl = document.getElementById('p'+p+'-explored');
+  const movesEl    = document.getElementById('p'+p+'-moves');
+  const timeEl     = document.getElementById('p'+p+'-time');
+
+  exploredEl.textContent = r.states_explored.toLocaleString();
+  movesEl.textContent    = r.optimal_moves;
+  timeEl.textContent     = (r.time_ms / 1000).toFixed(3) + ' s';
+
+  // Color time: green if under 1s, orange if over 5s
+  timeEl.className = 'stat-val' + (r.time_ms < 1000 ? ' green' : r.time_ms > 5000 ? ' orange' : '');
 }
 
-function clearPanelStats(key) {
-  ['explored', 'moves', 'time'].forEach(id =>
-    document.getElementById(key + '-' + id).textContent = '—'
-  );
-  document.getElementById(key + '-h').textContent = manhattan(state);
-}
-
-function setPanelStatus(key, msg, type = 'waiting') {
-  const el = document.getElementById(key + '-status');
+function setPanelStatus(p, msg, type) {
+  const el = document.getElementById('p'+p+'-status');
   el.textContent = msg;
   el.className   = 'panel-status ' + type;
 }
 
-function setGlobalStatus(msg) {
-  document.getElementById('global-status').textContent = msg;
+// ── Panel header (badge + desc) ───────────────────────────────────────────────
+
+function updatePanelHeader(p) {
+  const key = panelAlgos[p];
+  const badge = document.getElementById('p'+p+'-badge');
+  const desc  = document.getElementById('p'+p+'-desc');
+  badge.textContent = ALGO_LABELS[key];
+  badge.className   = 'algo-badge ' + ALGO_BADGE[key];
+  desc.textContent  = ALGO_DESC[key];
 }
 
-function maxPathLen() {
-  if (replayMode === 'explore') {
-    const lens = KEYS.map(k => panels[k].exploredPath ? panels[k].exploredPath.length : 0);
-    return Math.max(...lens, 1);
+// ── Comparison table ──────────────────────────────────────────────────────────
+
+function updateComparisonTable() {
+  // Find best states/time among successful solvers
+  let bestStates = Infinity, bestTime = Infinity;
+  for (const key of ALGO_KEYS) {
+    const r = results[key];
+    if (r && !r.error) {
+      bestStates = Math.min(bestStates, r.states_explored);
+      bestTime   = Math.min(bestTime, r.time_ms);
+    }
   }
-  const lens = KEYS.map(k => panels[k].path ? panels[k].path.length : 0);
-  return Math.max(...lens, 1);
+
+  for (const key of ALGO_KEYS) {
+    const r = results[key];
+    const pfx = 'tbl-' + key + '-';
+
+    if (!r) {
+      ['status','states','time'].forEach(id => {
+        const el = document.getElementById(pfx + id);
+        el.innerHTML   = '—';
+        el.className   = 'tbl-val';
+      });
+      continue;
+    }
+
+    const statusEl = document.getElementById(pfx + 'status');
+    const statesEl = document.getElementById(pfx + 'states');
+    const timeEl   = document.getElementById(pfx + 'time');
+
+    if (r.error) {
+      const isTimeout = r.error.startsWith('Timeout');
+      statusEl.innerHTML = '<span class="status-pill sp-fail">✗</span>';
+      statusEl.className = 'tbl-val';
+      statesEl.textContent = r.states_explored ? r.states_explored.toLocaleString() : '—';
+      statesEl.className   = 'tbl-val val-fail';
+      timeEl.textContent   = (r.time_ms/1000).toFixed(1)+'s';
+      timeEl.className     = 'tbl-val ' + (isTimeout ? 'val-slow' : 'val-fail');
+    } else {
+      statusEl.innerHTML = '<span class="status-pill sp-ok">✓</span>';
+      statusEl.className = 'tbl-val';
+
+      const isBestStates = r.states_explored === bestStates;
+      const isSlowStates = r.states_explored > bestStates * 5;
+      statesEl.textContent = r.states_explored.toLocaleString() + (isBestStates ? '★' : '');
+      statesEl.className   = 'tbl-val ' + (isBestStates ? 'val-best' : isSlowStates ? 'val-slow' : 'val-mid');
+
+      const isBestTime = r.time_ms === bestTime;
+      const isSlowTime = r.time_ms > bestTime * 5;
+      timeEl.textContent = (r.time_ms/1000).toFixed(2)+'s';
+      timeEl.className   = 'tbl-val ' + (isBestTime ? 'val-best' : isSlowTime ? 'val-slow' : 'val-mid');
+    }
+  }
+}
+
+// ── Progress / seek ───────────────────────────────────────────────────────────
+
+function maxPathLen() {
+  let max = 1;
+  for (let p = 0; p < 2; p++) {
+    const path = activePath(p);
+    if (path) max = Math.max(max, path.length);
+  }
+  return max;
 }
 
 function syncProgress() {
   const slider  = document.getElementById('seek-slider');
-  const counter = document.getElementById('step-counter');
   const maxLen  = maxPathLen();
   if (maxLen <= 1) {
-    slider.max      = 0;
-    slider.value    = 0;
-    slider.disabled = true;
-    counter.textContent = '—';
+    slider.max = 0; slider.value = 0; slider.disabled = true;
     return;
   }
   slider.max      = maxLen - 1;
   slider.value    = step;
   slider.disabled = false;
-  if (replayMode === 'explore') {
-    counter.textContent = `Explore ${step.toLocaleString()} / ${(maxLen - 1).toLocaleString()}`;
-  } else {
-    counter.textContent = `Step ${step} / ${maxLen - 1}`;
-  }
 }
 
-// ── Loading & error UI ────────────────────────────────────────────────────────
+// ── Loading ───────────────────────────────────────────────────────────────────
 
-function showLoadingAll(visible) {
-  for (const key of KEYS)
-    document.getElementById('loading-' + key).classList.toggle('hidden', !visible);
+function showLoading(visible) {
+  for (let p = 0; p < 2; p++)
+    document.getElementById('loading-' + p).classList.toggle('hidden', !visible);
 }
 
 function showGlobalError(msg) {
   document.getElementById('global-error-msg').textContent = msg;
   document.getElementById('global-error').classList.remove('hidden');
 }
-
 function clearGlobalError() {
   document.getElementById('global-error').classList.add('hidden');
 }
@@ -245,8 +357,7 @@ function stopTimer() { clearTimeout(timer); timer = null; }
 
 function setPlaying(val) {
   playing = val;
-  document.getElementById('btn-play').innerHTML =
-    val ? '&#9646;&#9646; Pause' : '&#9654; Play';
+  document.getElementById('btn-play').innerHTML = val ? '&#9646;&#9646; Pause' : '&#9654; Play';
 }
 
 function tick() {
@@ -255,14 +366,14 @@ function tick() {
   if (step >= maxLen - 1) {
     setPlaying(false);
     if (replayMode === 'solution') {
-      for (const key of KEYS)
-        if (panels[key].path && !panels[key].error)
-          setPanelStatus(key, 'Solved! ✓', 'solved');
+      for (let p = 0; p < 2; p++) {
+        const key = panelAlgos[p];
+        if (results[key] && !results[key].error) setPanelStatus(p, 'Solved! ✓', 'solved');
+      }
     }
     return;
   }
-  const prev = step;
-  step++;
+  const prev = step++;
   renderAll(prev);
   timer = setTimeout(tick, speed);
 }
@@ -273,16 +384,24 @@ function play() {
   setPlaying(true);
   tick();
 }
-
-function pause() { stopTimer(); setPlaying(false); }
-function togglePlay() { if (maxPathLen() <= 1) return; if (playing) pause(); else play(); }
+function pause()      { stopTimer(); setPlaying(false); }
+function togglePlay() { if (maxPathLen() <= 1) return; playing ? pause() : play(); }
 
 // ── Replay mode ───────────────────────────────────────────────────────────────
 
 function setReplayMode(mode) {
   replayMode = mode;
+  document.getElementById('btn-mode-explore').classList.toggle('active-mode',  mode === 'explore');
   document.getElementById('btn-mode-solution').classList.toggle('active-mode', mode === 'solution');
-  document.getElementById('btn-mode-explore').classList.toggle('active-mode', mode === 'explore');
+  pause(); step = 0; renderAll();
+}
+
+// ── Switch panel algorithm ────────────────────────────────────────────────────
+
+function switchPanelAlgo(p, key) {
+  panelAlgos[p] = key;
+  updatePanelHeader(p);
+  setPanelResult(p);
   pause();
   step = 0;
   renderAll();
@@ -291,56 +410,44 @@ function setReplayMode(mode) {
 // ── Actions ───────────────────────────────────────────────────────────────────
 
 function setBusy(busy) {
-  ['btn-shuffle', 'btn-solve', 'btn-reset', 'btn-play', 'btn-prev', 'btn-next',
-   'btn-mode-solution', 'btn-mode-explore']
-    .forEach(id => { document.getElementById(id).disabled = busy; });
+  ['btn-shuffle','btn-solve','btn-reset','btn-play','btn-prev','btn-next',
+   'btn-mode-explore','btn-mode-solution','p0-select','p1-select']
+    .forEach(id => {
+      const el = document.getElementById(id);
+      if (el) el.disabled = busy;
+    });
 }
 
 function doShuffle() {
-  pause();
-  clearGlobalError();
-  state = randomShuffle();
-  for (const key of KEYS) {
-    panels[key].path         = null;
-    panels[key].exploredPath = null;
-    panels[key].error        = null;
-    setPanelStatus(key, 'Waiting', 'waiting');
-    clearPanelStats(key);
-  }
-  step = 0;
-  renderAll();
-  setGlobalStatus('Shuffled — press Solve');
+  pause(); clearGlobalError();
+  board    = randomShuffle();
+  results  = {};
+  hManhattan = manhattan(board); hWd = null;
+  for (let p = 0; p < 2; p++) { setPanelResult(p); setPanelStatus(p, 'Waiting', 'waiting'); }
+  updateComparisonTable();
+  step = 0; renderAll();
 }
 
 async function doSolve() {
-  pause();
-  clearGlobalError();
-  setBusy(true);
-  showLoadingAll(true);
-  setGlobalStatus('Solving…');
-  for (const key of KEYS) setPanelStatus(key, 'Waiting', 'waiting');
+  pause(); clearGlobalError();
+  setBusy(true); showLoading(true);
+  results = {};
+  for (let p = 0; p < 2; p++) setPanelStatus(p, 'Solving…', 'waiting');
 
   const _raw    = parseFloat(document.getElementById('max-time-input').value);
   const maxTime = Math.min(300, Math.max(1, isNaN(_raw) ? 30 : _raw));
   const solveStart = Date.now();
-
   const ctrl    = new AbortController();
-  const timeout = setTimeout(() => ctrl.abort(), (maxTime + 10) * 1000);
+  const timeout = setTimeout(() => ctrl.abort(), (maxTime + 15) * 1000);
 
   try {
-    // ウォームアップ（コールドスタート対策）
-    setGlobalStatus('Waking up API… (first request may take 30–50 s)');
-    try {
-      await fetch(`${API_BASE}/warmup`);
-    } catch (e) {
-      // warmup 失敗は無視して続行
-    }
-    setGlobalStatus('Solving…');
+    // Wake-up ping for Render cold-start
+    try { await fetch(API_BASE + '/warmup'); } catch (_) {}
 
     const res = await fetch(API_URL, {
       method:  'POST',
       headers: { 'Content-Type': 'application/json' },
-      body:    JSON.stringify({ board: state, max_time: maxTime }),
+      body:    JSON.stringify({ board, max_time: maxTime }),
       signal:  ctrl.signal,
     });
     clearTimeout(timeout);
@@ -350,132 +457,88 @@ async function doSolve() {
       throw new Error(body.detail ?? `HTTP ${res.status}`);
     }
 
-    // { astar: {...|{error}}, idastar: {...|{error}} }
     const data = await res.json();
 
-    step = 0;
-    let anyValid = false;
-    const summaryParts = [];
+    hManhattan = data.h_manhattan ?? manhattan(board);
+    hWd        = data.h_wd        ?? 0;
 
-    for (const key of KEYS) {
+    // Store results with pre-built paths
+    for (const key of ALGO_KEYS) {
       const d = data[key];
-      const p = panels[key];
-      const label = key === 'astar' ? 'A*' : 'IDA*';
-
+      if (!d) continue;
       if (d.error) {
-        p.path         = null;
-        p.exploredPath = null;
-        p.error        = d.error;
-        let statusMsg, statusClass, summaryMsg;
-        if (d.error.startsWith('Timeout')) {
-          const secs  = Math.round(d.time_ms / 1000);
-          statusMsg   = `⏱ Timeout (${secs}s)`;
-          statusClass = 'error-timeout';
-          summaryMsg  = `${label}: timed out`;
-        } else if (d.error.includes('states')) {
-          statusMsg   = '❌ State limit exceeded';
-          statusClass = 'error-limit';
-          summaryMsg  = `${label}: state limit`;
-        } else {
-          statusMsg   = `❌ Error: ${d.error}`;
-          statusClass = 'error';
-          summaryMsg  = `${label}: failed`;
-        }
-        setPanelStatus(key, statusMsg, statusClass);
-        setPanelStats(key, { time_ms: d.time_ms, states_explored: d.states_explored });
-        summaryParts.push(`${summaryMsg} (${(d.time_ms / 1000).toFixed(1)}s)`);
+        results[key] = { ...d };
       } else {
-        p.path         = buildPath(state, d.moves);
-        p.exploredPath = buildExploredPath(d.explored_log ?? []);
-        p.error        = null;
-        setPanelStatus(key, 'Waiting', 'waiting');
-        setPanelStats(key, {
-          states_explored: d.states_explored,
-          optimal_moves:   d.optimal_moves,
-          time_ms:         d.time_ms,
-        });
-        summaryParts.push(
-          `${label}: ${d.optimal_moves} moves · ${d.states_explored.toLocaleString()} states · ${d.time_ms.toFixed(0)} ms`
-        );
-        anyValid = true;
+        results[key] = {
+          ...d,
+          path:         buildPath(board, d.moves),
+          exploredPath: buildExploredPath(d.explored_log ?? []),
+        };
       }
     }
 
-    showLoadingAll(false);
+    showLoading(false);
     setBusy(false);
-    setGlobalStatus(summaryParts.join('\n'));
+    updateComparisonTable();
+    for (let p = 0; p < 2; p++) setPanelResult(p);
+    step = 0;
     renderAll();
-    if (anyValid) play();
+    play();
 
   } catch (err) {
     clearTimeout(timeout);
-    showLoadingAll(false);
+    showLoading(false);
     setBusy(false);
 
     if (err.name === 'AbortError') {
-      const elapsed = Date.now() - solveStart;
-      const elapsedSec = (elapsed / 1000).toFixed(0);
-      for (const key of KEYS) {
-        setPanelStatus(key, `⏱ Timed out (${elapsedSec}s)`, 'error-timeout');
-        setPanelStats(key, { time_ms: elapsed });
-      }
-      setGlobalStatus('Timed out');
+      const secs = Math.round((Date.now() - solveStart) / 1000);
+      for (let p = 0; p < 2; p++) setPanelStatus(p, `⏱ Timed out (${secs}s)`, 'error-timeout');
     } else {
-      const msg = (err instanceof TypeError && (err.message || '').toLowerCase().includes('fetch'))
-        ? `Cannot connect to ${API_BASE}  —  Render サービスが停止している可能性があります`
+      const msg = err instanceof TypeError && (err.message||'').toLowerCase().includes('fetch')
+        ? `Cannot reach ${API_BASE} — API may be sleeping (Render cold start)`
         : (err.message || 'Unknown error');
       showGlobalError(msg);
-      setGlobalStatus('Error');
+      for (let p = 0; p < 2; p++) setPanelStatus(p, 'Error', 'error');
     }
   }
 }
 
 function doReset() {
-  pause();
-  clearGlobalError();
-  state = GOAL.slice();
-  for (const key of KEYS) {
-    panels[key].path         = null;
-    panels[key].exploredPath = null;
-    panels[key].error        = null;
-    setPanelStatus(key, 'Waiting', 'waiting');
-    clearPanelStats(key);
-  }
-  step = 0;
-  renderAll();
-  setGlobalStatus('Ready');
+  pause(); clearGlobalError();
+  board = GOAL.slice();
+  results = {};
+  hManhattan = 0; hWd = null;
+  for (let p = 0; p < 2; p++) { setPanelResult(p); setPanelStatus(p, 'Waiting', 'waiting'); }
+  updateComparisonTable();
+  step = 0; renderAll();
 }
 
 function stepForward() {
-  if (maxPathLen() <= 1 || step >= maxPathLen() - 1) return;
+  if (maxPathLen() <= 1 || step >= maxPathLen()-1) return;
   pause();
-  const prev = step;
-  step++;
+  const prev = step++;
   renderAll(prev);
-  if (step >= maxPathLen() - 1 && replayMode === 'solution')
-    for (const key of KEYS)
-      if (panels[key].path && !panels[key].error) setPanelStatus(key, 'Solved! ✓', 'solved');
+  if (step >= maxPathLen()-1 && replayMode === 'solution')
+    for (let p = 0; p < 2; p++) {
+      const key = panelAlgos[p];
+      if (results[key] && !results[key].error) setPanelStatus(p, 'Solved! ✓', 'solved');
+    }
 }
 
 function stepBack() {
   if (maxPathLen() <= 1 || step <= 0) return;
   pause();
-  const prev = step;
-  step--;
+  const prev = step--;
   renderAll(prev);
-  if (replayMode === 'solution')
-    for (const key of KEYS)
-      if (panels[key].path && !panels[key].error) setPanelStatus(key, 'Waiting', 'waiting');
 }
 
-// ── Speed slider ──────────────────────────────────────────────────────────────
+// ── Speed ─────────────────────────────────────────────────────────────────────
 
-const SPEED_MS = [1800, 1200, 800, 550, 400, 280, 180, 110, 60, 30];
+const SPEED_MS = [1800,1200,800,550,400,280,180,110,60,30];
 
 function applySpeed(val) {
   speed = SPEED_MS[val - 1];
-  document.getElementById('speed-display').textContent =
-    (1000 / speed).toFixed(1) + '×';
+  document.getElementById('speed-display').textContent = (1000/speed).toFixed(1) + '×';
 }
 
 // ── Bootstrap ─────────────────────────────────────────────────────────────────
@@ -487,6 +550,8 @@ document.getElementById('btn-shuffle').addEventListener('click', doShuffle);
 document.getElementById('btn-solve').addEventListener('click', doSolve);
 document.getElementById('btn-reset').addEventListener('click', doReset);
 document.getElementById('global-error-close').addEventListener('click', clearGlobalError);
+document.getElementById('btn-mode-explore').addEventListener('click',  () => setReplayMode('explore'));
+document.getElementById('btn-mode-solution').addEventListener('click', () => setReplayMode('solution'));
 document.getElementById('speed-slider').addEventListener('input', e => applySpeed(+e.target.value));
 document.getElementById('seek-slider').addEventListener('input', e => {
   const prev = step;
@@ -494,9 +559,32 @@ document.getElementById('seek-slider').addEventListener('input', e => {
   pause();
   renderAll(prev);
 });
-document.getElementById('btn-mode-solution').addEventListener('click', () => setReplayMode('solution'));
-document.getElementById('btn-mode-explore').addEventListener('click', () => setReplayMode('explore'));
+
+// Panel dropdowns
+for (let p = 0; p < 2; p++) {
+  document.getElementById('p'+p+'-select').addEventListener('change', e => {
+    switchPanelAlgo(p, e.target.value);
+  });
+}
+
+// Replay buttons in comparison table
+document.querySelectorAll('.replay-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const key = btn.dataset.algo;
+    // Put in panel 0 if neither panel shows it; prefer panel 1 if panel 0 already shows another solved algo
+    const p = panelAlgos[0] === key ? 0 : panelAlgos[1] === key ? 1 : 0;
+    // Switch the panel that doesn't currently hold a solved algo, or just panel 0
+    const targetPanel = (results[panelAlgos[0]] && !results[panelAlgos[0]].error &&
+                         panelAlgos[0] !== key) ? 1 : 0;
+    document.getElementById('p'+targetPanel+'-select').value = key;
+    switchPanelAlgo(targetPanel, key);
+    setReplayMode('solution');
+    step = 0;
+    play();
+  });
+});
 
 initGrids();
+for (let p = 0; p < 2; p++) { updatePanelHeader(p); }
 renderAll();
 applySpeed(5);

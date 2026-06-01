@@ -7,122 +7,204 @@
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <div class="app">
 
-    <header>
-      <h1>15-Puzzle Algorithm Comparator</h1>
-      <p class="subtitle">
-        A* vs IDA* &middot; same board &middot; Manhattan + Linear Conflict heuristic
-        &middot; <a href="https://puzzle-api-m99y.onrender.com/docs" target="_blank" rel="noopener">API docs ↗</a>
-      </p>
-    </header>
+<header>
+  <h1>15-Puzzle Algorithm Comparator</h1>
+  <p class="subtitle">
+    A* · IDA* · WD+A* · WD+IDA* &middot; Manhattan + Linear Conflict + Walking Distance
+    &middot; <a href="https://puzzle-api-m99y.onrender.com/docs" target="_blank" rel="noopener">API docs ↗</a>
+  </p>
+</header>
 
-    <div class="body-layout">
+<div class="body-layout">
 
-      <!-- ── Shared controls ──────────────────────────────────────────────── -->
-      <aside class="controls" aria-label="コントロールパネル">
+  <!-- ── Controls sidebar ──────────────────────────────────────────────────── -->
+  <aside class="controls" aria-label="Control panel">
 
-        <div class="btn-row action-row">
-          <button id="btn-shuffle" class="btn secondary-btn">Shuffle</button>
-          <button id="btn-solve"   class="btn accent-btn">Solve</button>
-          <button id="btn-reset"   class="btn secondary-btn">Reset</button>
-        </div>
+    <div class="btn-row">
+      <button id="btn-shuffle" class="btn secondary-btn">Shuffle</button>
+      <button id="btn-solve"   class="btn accent-btn">Solve</button>
+      <button id="btn-reset"   class="btn secondary-btn">Reset</button>
+    </div>
 
-        <div class="max-time-row">
-          <label for="max-time-input" class="max-time-label">Max time</label>
-          <input id="max-time-input" type="number" min="1" max="300" value="30" step="1">
-          <span class="max-time-unit">s / solver</span>
-        </div>
+    <div class="max-time-row">
+      <label for="max-time-input" class="max-time-label">Max time</label>
+      <input id="max-time-input" type="number" min="1" max="300" value="30" step="1">
+      <span>s / solver</span>
+    </div>
 
-        <div class="controls-divider"></div>
+    <div class="controls-divider"></div>
 
-        <!-- Replay mode toggle -->
-        <div class="mode-row btn-row">
-          <button id="btn-mode-explore"  class="btn mode-btn active-mode">Explore Replay</button>
-          <button id="btn-mode-solution" class="btn mode-btn">Solution Replay</button>
-        </div>
+    <div class="btn-row">
+      <button id="btn-mode-explore"  class="btn mode-btn active-mode">Explore Replay</button>
+      <button id="btn-mode-solution" class="btn mode-btn">Solution Replay</button>
+    </div>
 
-        <input id="seek-slider" type="range" min="0" max="0" value="0" disabled>
+    <input id="seek-slider" type="range" min="0" max="0" value="0" disabled>
 
-        <div class="step-row">
-          <span id="step-counter">&#8212;</span>
-          <span id="global-status" class="status">Ready</span>
-        </div>
+    <div class="btn-row">
+      <button id="btn-prev"  class="btn icon-btn" aria-label="Step back">&#9664;&#9664;</button>
+      <button id="btn-play"  class="btn primary-btn">&#9654; Play</button>
+      <button id="btn-next"  class="btn icon-btn" aria-label="Step forward">&#9654;&#9654;</button>
+    </div>
 
-        <div class="btn-row playback-row">
-          <button id="btn-prev"  class="btn icon-btn"    aria-label="1ステップ戻る">&#9664;&#9664;</button>
-          <button id="btn-play"  class="btn primary-btn">&#9654; Play</button>
-          <button id="btn-next"  class="btn icon-btn"    aria-label="1ステップ進む">&#9654;&#9654;</button>
-        </div>
+    <div class="speed-row">
+      <span class="speed-label-text">Speed</span>
+      <input id="speed-slider" type="range" min="1" max="10" value="5">
+      <span id="speed-display" class="speed-val">2.5&times;</span>
+    </div>
 
-        <div class="speed-row">
-          <span class="speed-label-text">Speed</span>
-          <input id="speed-slider" type="range" min="1" max="10" value="5">
-          <span id="speed-display" class="speed-val">2.5&times;</span>
-        </div>
+    <div id="global-error" class="global-error hidden" role="alert">
+      <span id="global-error-msg"></span>
+      <button id="global-error-close" class="global-error-close" aria-label="Dismiss">&#215;</button>
+    </div>
 
-        <!-- Network / API error strip -->
-        <div id="global-error" class="global-error hidden" role="alert">
-          <span id="global-error-msg"></span>
-          <button id="global-error-close" class="global-error-close" aria-label="Dismiss">&#215;</button>
-        </div>
+    <div class="controls-divider"></div>
 
-        <p class="api-note">
-          API: <a href="https://puzzle-api-m99y.onrender.com/docs" target="_blank" rel="noopener">puzzle-api-m99y.onrender.com ↗</a>
-        </p>
+    <!-- Comparison table -->
+    <div class="comparison-card">
+      <div class="comparison-title">Comparison</div>
+      <table>
+        <thead>
+          <tr>
+            <th>Metric</th>
+            <th><span class="algo-badge b-a">A*</span></th>
+            <th><span class="algo-badge b-ida">IDA*</span></th>
+            <th><span class="algo-badge b-wda">WD+A*</span></th>
+            <th><span class="algo-badge b-wida">WD+IDA*</span></th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td class="metric">Status</td>
+            <td id="tbl-astar-status"     class="tbl-val">—</td>
+            <td id="tbl-idastar-status"   class="tbl-val">—</td>
+            <td id="tbl-wdastar-status"   class="tbl-val">—</td>
+            <td id="tbl-wdidastar-status" class="tbl-val">—</td>
+          </tr>
+          <tr>
+            <td class="metric">States</td>
+            <td id="tbl-astar-states"     class="tbl-val">—</td>
+            <td id="tbl-idastar-states"   class="tbl-val">—</td>
+            <td id="tbl-wdastar-states"   class="tbl-val">—</td>
+            <td id="tbl-wdidastar-states" class="tbl-val">—</td>
+          </tr>
+          <tr>
+            <td class="metric">Time</td>
+            <td id="tbl-astar-time"     class="tbl-val">—</td>
+            <td id="tbl-idastar-time"   class="tbl-val">—</td>
+            <td id="tbl-wdastar-time"   class="tbl-val">—</td>
+            <td id="tbl-wdidastar-time" class="tbl-val">—</td>
+          </tr>
+          <tr>
+            <td class="metric">Replay</td>
+            <td><button class="replay-btn" data-algo="astar">&#9654;</button></td>
+            <td><button class="replay-btn" data-algo="idastar">&#9654;</button></td>
+            <td><button class="replay-btn" data-algo="wdastar">&#9654;</button></td>
+            <td><button class="replay-btn" data-algo="wdidastar">&#9654;</button></td>
+          </tr>
+        </tbody>
+      </table>
+      <div class="tbl-note" id="tbl-note">★ Best &nbsp;·&nbsp; Green=best · Orange=slow</div>
+    </div>
 
-      </aside>
+    <p class="api-note">
+      API: <a href="https://puzzle-api-m99y.onrender.com/docs" target="_blank" rel="noopener">puzzle-api-m99y.onrender.com ↗</a>
+    </p>
 
-      <!-- ── Dual panels ──────────────────────────────────────────────────── -->
-      <div class="panels">
+  </aside>
 
-        <!-- A* panel -->
-        <section class="panel">
-          <div class="panel-header">
-            <span class="algo-badge astar-badge">A*</span>
-            <span class="algo-desc">Best-first search</span>
+  <!-- ── Right: dual panels ─────────────────────────────────────────────────── -->
+  <div class="right-col">
+    <div class="panels-wrap">
+
+      <!-- Panel 0 -->
+      <section class="panel" id="panel-0">
+        <div class="panel-header">
+          <div class="panel-header-left">
+            <span class="algo-badge b-a" id="p0-badge">A*</span>
+            <span class="algo-desc" id="p0-desc">Best-first search</span>
           </div>
-          <div class="grid" id="grid-astar">
-            <div id="loading-astar" class="loading-overlay hidden" aria-live="polite">
-              <div class="spinner" aria-hidden="true"></div>
-              <span>Solving&hellip;</span>
-            </div>
-          </div>
-          <div class="panel-stats">
-            <div class="stat"><span class="stat-name">States Explored</span><span id="astar-explored"  class="stat-val">&#8212;</span></div>
-            <div class="stat"><span class="stat-name">Optimal Moves</span>  <span id="astar-moves"     class="stat-val">&#8212;</span></div>
-            <div class="stat"><span class="stat-name">Manhattan Dist</span> <span id="astar-h"         class="stat-val">0</span></div>
-            <div class="stat"><span class="stat-name">Time</span>           <span id="astar-time"      class="stat-val">&#8212;</span></div>
-          </div>
-          <div id="astar-status" class="panel-status waiting">Waiting</div>
-        </section>
+          <select id="p0-select">
+            <option value="astar"     selected>A*</option>
+            <option value="idastar"          >IDA*</option>
+            <option value="wdastar"          >WD + A*</option>
+            <option value="wdidastar"        >WD + IDA*</option>
+          </select>
+        </div>
 
-        <!-- IDA* panel -->
-        <section class="panel">
-          <div class="panel-header">
-            <span class="algo-badge idastar-badge">IDA*</span>
-            <span class="algo-desc">Iterative deepening</span>
+        <div class="grid" id="grid-0">
+          <div id="loading-0" class="loading-overlay hidden" aria-live="polite">
+            <div class="spinner" aria-hidden="true"></div>
+            <span>Solving&hellip;</span>
           </div>
-          <div class="grid" id="grid-idastar">
-            <div id="loading-idastar" class="loading-overlay hidden" aria-live="polite">
-              <div class="spinner" aria-hidden="true"></div>
-              <span>Solving&hellip;</span>
-            </div>
+        </div>
+
+        <div class="panel-stats">
+          <div class="stat"><div class="stat-name">States Explored</div><div class="stat-val" id="p0-explored">—</div></div>
+          <div class="stat"><div class="stat-name">Optimal Moves</div><div class="stat-val" id="p0-moves">—</div></div>
+          <div class="stat"><div class="stat-name">h (Manhattan)</div><div class="stat-val" id="p0-hmh">0</div></div>
+          <div class="stat"><div class="stat-name">h (Walking Dist)</div><div class="stat-val" id="p0-hwd">0</div></div>
+          <div class="stat stat-wide"><div class="stat-name">Time</div><div class="stat-val" id="p0-time">—</div></div>
+        </div>
+
+        <div class="h-compare" id="p0-hcompare">
+          <span class="h-label mh-label" id="p0-mhlabel">MH:0</span>
+          <div class="h-bar-wrap"><div class="h-bar h-bar-mh" id="p0-mhbar" style="width:50%"></div></div>
+          <span class="h-label wd-label" id="p0-wdlabel">WD:0</span>
+          <div class="h-bar-wrap"><div class="h-bar h-bar-wd" id="p0-wdbar" style="width:50%"></div></div>
+          <span class="h-note" id="p0-hnote"></span>
+        </div>
+
+        <div class="panel-status waiting" id="p0-status">Waiting</div>
+      </section>
+
+      <!-- Panel 1 -->
+      <section class="panel" id="panel-1">
+        <div class="panel-header">
+          <div class="panel-header-left">
+            <span class="algo-badge b-wida" id="p1-badge">WD+IDA*</span>
+            <span class="algo-desc" id="p1-desc">WD heuristic, IDA*</span>
           </div>
-          <div class="panel-stats">
-            <div class="stat"><span class="stat-name">States Explored</span><span id="idastar-explored" class="stat-val">&#8212;</span></div>
-            <div class="stat"><span class="stat-name">Optimal Moves</span>  <span id="idastar-moves"    class="stat-val">&#8212;</span></div>
-            <div class="stat"><span class="stat-name">Manhattan Dist</span> <span id="idastar-h"        class="stat-val">0</span></div>
-            <div class="stat"><span class="stat-name">Time</span>           <span id="idastar-time"     class="stat-val">&#8212;</span></div>
+          <select id="p1-select">
+            <option value="astar"          >A*</option>
+            <option value="idastar"        >IDA*</option>
+            <option value="wdastar"        >WD + A*</option>
+            <option value="wdidastar" selected>WD + IDA*</option>
+          </select>
+        </div>
+
+        <div class="grid" id="grid-1">
+          <div id="loading-1" class="loading-overlay hidden" aria-live="polite">
+            <div class="spinner" aria-hidden="true"></div>
+            <span>Solving&hellip;</span>
           </div>
-          <div id="idastar-status" class="panel-status waiting">Waiting</div>
-        </section>
+        </div>
 
-      </div><!-- /.panels -->
+        <div class="panel-stats">
+          <div class="stat"><div class="stat-name">States Explored</div><div class="stat-val" id="p1-explored">—</div></div>
+          <div class="stat"><div class="stat-name">Optimal Moves</div><div class="stat-val" id="p1-moves">—</div></div>
+          <div class="stat"><div class="stat-name">h (Manhattan)</div><div class="stat-val" id="p1-hmh">0</div></div>
+          <div class="stat"><div class="stat-name">h (Walking Dist)</div><div class="stat-val" id="p1-hwd">0</div></div>
+          <div class="stat stat-wide"><div class="stat-name">Time</div><div class="stat-val" id="p1-time">—</div></div>
+        </div>
 
-    </div><!-- /.body-layout -->
+        <div class="h-compare" id="p1-hcompare">
+          <span class="h-label mh-label" id="p1-mhlabel">MH:0</span>
+          <div class="h-bar-wrap"><div class="h-bar h-bar-mh" id="p1-mhbar" style="width:50%"></div></div>
+          <span class="h-label wd-label" id="p1-wdlabel">WD:0</span>
+          <div class="h-bar-wrap"><div class="h-bar h-bar-wd" id="p1-wdbar" style="width:50%"></div></div>
+          <span class="h-note" id="p1-hnote"></span>
+        </div>
 
+        <div class="panel-status waiting" id="p1-status">Waiting</div>
+      </section>
+
+    </div>
   </div>
-  <script src="main.js"></script>
+
+</div>
+
+<script src="main.js"></script>
 </body>
 </html>
