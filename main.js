@@ -46,6 +46,10 @@ let panelAlgos = ['astar', 'wdidastar'];
 // results keyed by algo key; undefined = not yet solved
 let results = {};
 
+// initial h values captured when board is set (used for progress bar scale)
+let initMH = 0;
+let initWD = 0;
+
 // tile DOM elements per panel: tileEls[panelIdx][value 1-15] = <div>
 const tileEls = [{}, {}];
 
@@ -242,10 +246,13 @@ function renderAll(prevStep = null) {
 // ── h-bar update ──────────────────────────────────────────────────────────────
 
 function updateHBar(p, st) {
-  const mh    = manhattan(st);
-  const wd    = walkingDistance(st);
-  const total = Math.max(mh + wd, 1);
-  const mhPct = Math.round((mh / total) * 100);
+  const mh = manhattan(st);
+  const wd = walkingDistance(st);
+
+  // Progress: 0% at initial board (h=initH), 100% at goal (h=0)
+  // Each bar grows independently from the left as solving progresses.
+  const mhPct = initMH > 0 ? Math.max(0, Math.round((1 - mh / initMH) * 100)) : (mh === 0 ? 100 : 0);
+  const wdPct = initWD > 0 ? Math.max(0, Math.round((1 - wd / initWD) * 100)) : (wd === 0 ? 100 : 0);
 
   document.getElementById('p' + p + '-hmh').textContent = mh;
   document.getElementById('p' + p + '-hwd').textContent = wd;
@@ -253,7 +260,7 @@ function updateHBar(p, st) {
   document.getElementById('p' + p + '-mhlabel').textContent = 'MH:' + mh;
   document.getElementById('p' + p + '-wdlabel').textContent = 'WD:' + wd;
   document.getElementById('p' + p + '-mhbar').style.width = mhPct + '%';
-  document.getElementById('p' + p + '-wdbar').style.width = (100 - mhPct) + '%';
+  document.getElementById('p' + p + '-wdbar').style.width = wdPct + '%';
   document.getElementById('p' + p + '-hnote').textContent =
     wd > mh ? 'WD tighter' : wd === mh ? 'equal' : 'MH tighter';
 }
@@ -476,6 +483,8 @@ function doShuffle() {
   pause(); clearGlobalError();
   board   = randomShuffle();
   results = {};
+  initMH  = manhattan(board);
+  initWD  = walkingDistance(board);
   for (let p = 0; p < 2; p++) { setPanelResult(p); setPanelStatus(p, 'Waiting', 'waiting'); }
   updateComparisonTable();
   step = 0; renderAll();
@@ -557,6 +566,8 @@ function doReset() {
   pause(); clearGlobalError();
   board   = GOAL.slice();
   results = {};
+  initMH  = 0;
+  initWD  = 0;
   for (let p = 0; p < 2; p++) { setPanelResult(p); setPanelStatus(p, 'Waiting', 'waiting'); }
   updateComparisonTable();
   step = 0; renderAll();
