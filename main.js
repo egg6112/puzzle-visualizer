@@ -261,8 +261,6 @@ function updateHBar(p, st) {
   document.getElementById('p' + p + '-wdlabel').textContent = 'WD:' + wd;
   document.getElementById('p' + p + '-mhbar').style.width = mhPct + '%';
   document.getElementById('p' + p + '-wdbar').style.width = wdPct + '%';
-  document.getElementById('p' + p + '-hnote').textContent =
-    wd > mh ? 'WD tighter' : wd === mh ? 'equal' : 'MH tighter';
 }
 
 // ── Stats & status ────────────────────────────────────────────────────────────
