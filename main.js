@@ -249,10 +249,10 @@ function updateHBar(p, st) {
   const mh = manhattan(st);
   const wd = walkingDistance(st);
 
-  // Remaining h ratio: 100% at initial board (h=initH), 0% at goal (h=0).
-  // Both bars independently shrink from full → empty as solving completes.
-  const mhPct = initMH > 0 ? Math.min(100, Math.round(mh / initMH * 100)) : 0;
-  const wdPct = initWD > 0 ? Math.min(100, Math.round(wd / initWD * 100)) : 0;
+  // Progress ratio: 0% at initial board (h=initH), 100% at goal (h=0).
+  // Timeout stays at 0% (no progress). Goal reaches 100%.
+  const mhPct = initMH > 0 ? Math.max(0, Math.min(100, Math.round((1 - mh / initMH) * 100))) : 0;
+  const wdPct = initWD > 0 ? Math.max(0, Math.min(100, Math.round((1 - wd / initWD) * 100))) : 0;
 
   document.getElementById('p' + p + '-hmh').textContent = mh;
   document.getElementById('p' + p + '-hwd').textContent = wd;
