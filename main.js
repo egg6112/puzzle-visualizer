@@ -1,5 +1,5 @@
-// 15-Puzzle Algorithm Comparator — 4-algorithm edition
-// Panels show any of: A* / IDA* / WD+A* / WD+IDA*, selectable via dropdown.
+// 15-Puzzle Algorithm Comparator — 5-algorithm edition
+// Panels show any of: A* / IDA* / WD+A* / WD+IDA* / PDB+IDA*, selectable via dropdown.
 
 const API_BASE = "https://puzzle-api-m99y.onrender.com";
 const API_URL  = API_BASE + '/compare';
@@ -48,6 +48,9 @@ let panelAlgos = ['astar', 'pdbidastar'];
 
 // results keyed by algo key; undefined = not yet solved
 let results = {};
+
+// per-algo solve state: 'waiting' | 'running' | 'done' | 'failed'
+let algoStates = {};
 
 // initial h values captured when board is set (used for progress bar scale)
 let initMH  = 0;
@@ -354,53 +357,68 @@ function updatePanelHeader(p) {
 // ── Comparison table ──────────────────────────────────────────────────────────
 
 function updateComparisonTable() {
-  // Find best states/time among successful solvers
+  // ★ and colour-coding only when all algos have settled (no waiting/running left)
+  const allDone = ALGO_KEYS.every(k => {
+    const s = algoStates[k];
+    return s === 'done' || s === 'failed';
+  });
+
   let bestStates = Infinity, bestTime = Infinity;
-  for (const key of ALGO_KEYS) {
-    const r = results[key];
-    if (r && !r.error) {
-      bestStates = Math.min(bestStates, r.states_explored);
-      bestTime   = Math.min(bestTime, r.time_ms);
+  if (allDone) {
+    for (const key of ALGO_KEYS) {
+      const r = results[key];
+      if (r && !r.error) {
+        bestStates = Math.min(bestStates, r.states_explored);
+        bestTime   = Math.min(bestTime,   r.time_ms);
+      }
     }
   }
 
   for (const key of ALGO_KEYS) {
-    const r = results[key];
-    const pfx = 'tbl-' + key + '-';
-
-    if (!r) {
-      ['status','states','time'].forEach(id => {
-        const el = document.getElementById(pfx + id);
-        el.innerHTML   = '—';
-        el.className   = 'tbl-val';
-      });
-      continue;
-    }
+    const r     = results[key];
+    const state = algoStates[key] ?? 'waiting';
+    const pfx   = 'tbl-' + key + '-';
 
     const statusEl = document.getElementById(pfx + 'status');
     const statesEl = document.getElementById(pfx + 'states');
     const timeEl   = document.getElementById(pfx + 'time');
 
-    if (r.error) {
-      const isTimeout = r.error.startsWith('Timeout');
-      statusEl.innerHTML = '<span class="status-pill sp-fail">✗</span>';
+    if (state === 'waiting') {
+      statusEl.innerHTML = '—'; statusEl.className = 'tbl-val';
+      statesEl.innerHTML = '—'; statesEl.className = 'tbl-val';
+      timeEl.innerHTML   = '—'; timeEl.className   = 'tbl-val';
+      continue;
+    }
+
+    if (state === 'running') {
+      statusEl.innerHTML = '<span class="tbl-spinner"></span>';
       statusEl.className = 'tbl-val';
+      statesEl.innerHTML = '—'; statesEl.className = 'tbl-val';
+      timeEl.innerHTML   = '—'; timeEl.className   = 'tbl-val';
+      continue;
+    }
+
+    // done or failed — r is guaranteed to exist
+    if (r && r.error) {
+      const isTimeout = r.error.startsWith('Timeout');
+      statusEl.innerHTML   = '<span class="status-pill sp-fail">✗</span>';
+      statusEl.className   = 'tbl-val';
       statesEl.textContent = r.states_explored ? r.states_explored.toLocaleString() : '—';
       statesEl.className   = 'tbl-val val-fail';
-      timeEl.textContent   = (r.time_ms/1000).toFixed(1)+'s';
+      timeEl.textContent   = (r.time_ms / 1000).toFixed(1) + 's';
       timeEl.className     = 'tbl-val ' + (isTimeout ? 'val-slow' : 'val-fail');
-    } else {
+    } else if (r) {
       statusEl.innerHTML = '<span class="status-pill sp-ok">✓</span>';
       statusEl.className = 'tbl-val';
 
-      const isBestStates = r.states_explored === bestStates;
-      const isSlowStates = r.states_explored > bestStates * 5;
+      const isBestStates = allDone && r.states_explored === bestStates;
+      const isSlowStates = allDone && r.states_explored > bestStates * 5;
       statesEl.textContent = r.states_explored.toLocaleString() + (isBestStates ? '★' : '');
       statesEl.className   = 'tbl-val ' + (isBestStates ? 'val-best' : isSlowStates ? 'val-slow' : 'val-mid');
 
-      const isBestTime = r.time_ms === bestTime;
-      const isSlowTime = r.time_ms > bestTime * 5;
-      timeEl.textContent = (r.time_ms/1000).toFixed(2)+'s';
+      const isBestTime = allDone && r.time_ms === bestTime;
+      const isSlowTime = allDone && r.time_ms > bestTime * 5;
+      timeEl.textContent = (r.time_ms / 1000).toFixed(2) + 's';
       timeEl.className   = 'tbl-val ' + (isBestTime ? 'val-best' : isSlowTime ? 'val-slow' : 'val-mid');
     }
   }
@@ -434,6 +452,15 @@ function syncProgress() {
 function showLoading(visible) {
   for (let p = 0; p < 2; p++)
     document.getElementById('loading-' + p).classList.toggle('hidden', !visible);
+}
+
+// Show/hide each panel's loading overlay based on whether its algo is 'running'.
+function updatePanelLoading() {
+  for (let p = 0; p < 2; p++) {
+    const state   = algoStates[panelAlgos[p]] ?? 'waiting';
+    const overlay = document.getElementById('loading-' + p);
+    overlay.classList.toggle('hidden', state !== 'running');
+  }
 }
 
 function showGlobalError(msg) {
@@ -513,11 +540,12 @@ function setBusy(busy) {
 
 function doShuffle() {
   pause(); clearGlobalError();
-  board   = randomShuffle();
-  results = {};
-  initMH  = manhattan(board);
-  initWD  = walkingDistance(board);
-  initPDB = 0;
+  board      = randomShuffle();
+  results    = {};
+  algoStates = {};
+  initMH     = manhattan(board);
+  initWD     = walkingDistance(board);
+  initPDB    = 0;
   for (let p = 0; p < 2; p++) { setPanelResult(p); setPanelStatus(p, 'Waiting', 'waiting'); }
   updateComparisonTable();
   step = 0; renderAll();
@@ -525,89 +553,138 @@ function doShuffle() {
 
 async function doSolve() {
   pause(); clearGlobalError();
-  setBusy(true); showLoading(true);
-  results = {};
-  for (let p = 0; p < 2; p++) setPanelStatus(p, 'Solving…', 'waiting');
+  setBusy(true);
+  results    = {};
+  initPDB    = 0;
+  algoStates = {};
+  ALGO_KEYS.forEach(k => { algoStates[k] = 'waiting'; });
+  updateComparisonTable();
+  for (let p = 0; p < 2; p++) { setPanelResult(p); setPanelStatus(p, 'Waiting', 'waiting'); }
 
   const _raw    = parseFloat(document.getElementById('max-time-input').value);
   const maxTime = Math.min(300, Math.max(1, isNaN(_raw) ? 30 : _raw));
   const solveStart = Date.now();
-  const ctrl    = new AbortController();
-  // Sequential server: worst case = 5 × max_time. Add 30 s network buffer.
-  const timeout = setTimeout(() => ctrl.abort(), (maxTime * 5 + 30) * 1000);
 
-  try {
-    // Wake-up ping for Render cold-start
-    try { await fetch(API_BASE + '/warmup'); } catch (_) {}
+  // Wake-up ping for Render cold-start
+  try { await fetch(API_BASE + '/warmup'); } catch (_) {}
 
-    const res = await fetch(API_URL, {
-      method:  'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body:    JSON.stringify({ board, max_time: maxTime }),
-      signal:  ctrl.signal,
-    });
-    clearTimeout(timeout);
+  let aborted = false;
 
-    if (!res.ok) {
-      const body = await res.json().catch(() => ({}));
-      throw new Error(body.detail ?? `HTTP ${res.status}`);
+  for (const algo of ALGO_KEYS) {
+    // If board is unsolvable (detected on first call), mark remaining as failed
+    if (aborted) {
+      algoStates[algo] = 'failed';
+      results[algo]    = { error: 'Skipped', time_ms: 0, states_explored: 0 };
+      updateComparisonTable();
+      continue;
     }
 
-    const data = await res.json();
+    // Mark this algo as running and show spinner
+    algoStates[algo] = 'running';
+    updateComparisonTable();
+    updatePanelLoading();
+    for (let p = 0; p < 2; p++) {
+      if (panelAlgos[p] === algo) setPanelStatus(p, 'Solving…', 'waiting');
+    }
 
-    // h_pdb of the initial board — used as the 100% baseline for PDB bars.
-    // 0 when PDB files are not loaded on the server.
-    initPDB = data.h_pdb ?? 0;
+    const ctrl    = new AbortController();
+    // Each /solve_one call has its own budget: max_time + 15 s network buffer
+    const timeout = setTimeout(() => ctrl.abort(), (maxTime + 15) * 1000);
 
-    // Store results with pre-built paths
-    for (const key of ALGO_KEYS) {
-      const d = data[key];
-      if (!d) continue;
-      if (d.error) {
-        results[key] = { ...d };
+    try {
+      const res = await fetch(API_BASE + '/solve_one', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ board, algo, max_time: maxTime }),
+        signal:  ctrl.signal,
+      });
+      clearTimeout(timeout);
+
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        const msg  = body.detail ?? `HTTP ${res.status}`;
+        if (res.status === 400) {
+          // Unsolvable board — show error and skip remaining algos
+          showGlobalError(msg);
+          aborted = true;
+          for (let p = 0; p < 2; p++) setPanelStatus(p, 'Error', 'error');
+        }
+        algoStates[algo] = 'failed';
+        results[algo]    = { error: msg, time_ms: 0, states_explored: 0 };
+        updateComparisonTable();
+        updatePanelLoading();
+        for (let p = 0; p < 2; p++) {
+          if (panelAlgos[p] === algo) setPanelResult(p);
+        }
+        continue;
+      }
+
+      const data = await res.json();
+
+      // Capture initPDB from first response that carries it
+      if (initPDB === 0 && data.h_pdb) initPDB = data.h_pdb;
+
+      if (data.error) {
+        // Server-side timeout or state-limit — per-algo failure, continue others
+        results[algo]    = { error: data.error, time_ms: data.time_ms,
+                             states_explored: data.states_explored };
+        algoStates[algo] = 'failed';
       } else {
-        results[key] = {
-          ...d,
-          path:         buildPath(board, d.moves),
-          exploredPath: buildExploredPath(d.explored_log ?? []),
-          exploredHPdb: d.explored_h_pdb ?? [],
+        results[algo] = {
+          ...data,
+          path:         buildPath(board, data.moves),
+          exploredPath: buildExploredPath(data.explored_log ?? []),
+          exploredHPdb: data.explored_h_pdb ?? [],
         };
+        algoStates[algo] = 'done';
+      }
+
+    } catch (err) {
+      clearTimeout(timeout);
+      algoStates[algo] = 'failed';
+      if (err.name === 'AbortError') {
+        const secs = Math.round((Date.now() - solveStart) / 1000);
+        results[algo] = { error: `Timed out (${secs}s)`,
+                          time_ms: (maxTime + 15) * 1000, states_explored: 0 };
+      } else {
+        const msg = err instanceof TypeError && (err.message || '').toLowerCase().includes('fetch')
+          ? `Cannot reach ${API_BASE} — API may be sleeping`
+          : (err.message || 'Network error');
+        results[algo] = { error: msg, time_ms: 0, states_explored: 0 };
+        if (err instanceof TypeError) { showGlobalError(msg); aborted = true; }
       }
     }
 
-    showLoading(false);
-    setBusy(false);
+    // Immediately update comparison row and any panel showing this algo
     updateComparisonTable();
-    for (let p = 0; p < 2; p++) setPanelResult(p);
-    step = 0;
-    renderAll();
-    play();
-
-  } catch (err) {
-    clearTimeout(timeout);
-    showLoading(false);
-    setBusy(false);
-
-    if (err.name === 'AbortError') {
-      const secs = Math.round((Date.now() - solveStart) / 1000);
-      for (let p = 0; p < 2; p++) setPanelStatus(p, `⏱ Timed out (${secs}s)`, 'error-timeout');
-    } else {
-      const msg = err instanceof TypeError && (err.message||'').toLowerCase().includes('fetch')
-        ? `Cannot reach ${API_BASE} — API may be sleeping (Render cold start)`
-        : (err.message || 'Unknown error');
-      showGlobalError(msg);
-      for (let p = 0; p < 2; p++) setPanelStatus(p, 'Error', 'error');
+    updatePanelLoading();
+    for (let p = 0; p < 2; p++) {
+      if (panelAlgos[p] === algo) {
+        setPanelResult(p);
+        step = 0;
+        renderAll();
+      }
     }
   }
+
+  // All done: final ★ computation, cleanup, auto-play
+  setBusy(false);
+  updateComparisonTable();   // recomputes with allDone=true → adds ★
+  updatePanelLoading();
+  for (let p = 0; p < 2; p++) setPanelResult(p);
+  step = 0;
+  renderAll();
+  if (ALGO_KEYS.some(k => results[k] && !results[k].error)) play();
 }
 
 function doReset() {
   pause(); clearGlobalError();
-  board   = GOAL.slice();
-  results = {};
-  initMH  = 0;
-  initWD  = 0;
-  initPDB = 0;
+  board      = GOAL.slice();
+  results    = {};
+  algoStates = {};
+  initMH     = 0;
+  initWD     = 0;
+  initPDB    = 0;
   for (let p = 0; p < 2; p++) { setPanelResult(p); setPanelStatus(p, 'Waiting', 'waiting'); }
   updateComparisonTable();
   step = 0; renderAll();

@@ -181,6 +181,17 @@ td.tbl-val.val-fail { color: #f87171; }
 .sp-ok   { background: rgba(16,185,129,0.12); color: #34d399; }
 .sp-fail { background: rgba(239,68,68,0.12);  color: #f87171; }
 
+/* Inline spinner for the comparison-table Status cell while an algo is running */
+.tbl-spinner {
+  display: inline-block;
+  width: 9px; height: 9px;
+  border: 1.5px solid rgba(99,102,241,0.2);
+  border-top-color: var(--accent-hi);
+  border-radius: 50%;
+  animation: spin 0.75s linear infinite;
+  vertical-align: middle;
+}
+
 .replay-btn {
   display: inline-flex; align-items: center; gap: 2px;
   background: transparent; border: 1px solid var(--border);
