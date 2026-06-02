@@ -8,13 +8,15 @@
 
 ## 1. 概要
 
-15パズル（4×4スライドパズル）を A*・IDA*・WD+A*・WD+IDA* の 4 アルゴリズムで並列解法し、探索過程と解答手順をアニメーションで比較できる静的 Web アプリ。
+15パズル（4×4スライドパズル）を A*・IDA*・WD+A*・WD+IDA*・PDB+IDA* の 5 アルゴリズムで逐次解法し、探索過程と解答手順をアニメーションで比較できる静的 Web アプリ。
 
 **主な特徴：**
-- 2 パネルが独立したドロップダウンで 4 アルゴリズムを自由に切り替えて比較できる
+- 2 パネルが独立したドロップダウンで 5 アルゴリズムを自由に切り替えて比較できる
 - Explore Replay（探索順）と Solution Replay（解答手順）の 2 モードを切り替え可能
-- Manhattan距離と Walking Distance のリアルタイム進捗バーを表示
-- 4 アルゴリズム比較テーブルに★（最優秀）・カラーコーディングを表示
+- Manhattan距離・Walking Distance・PDB のリアルタイム進捗バー（3 行）を表示
+- 5 アルゴリズム比較カードリストに★（最優秀）・カラーコーディングを表示
+- アルゴリズムを 1 本ずつ `POST /solve_one` で逐次呼び出し、完了した行からリアルタイムに結果を反映
+- 実行中アルゴリズムのセルにインラインスピナー表示
 - シークスライダーで任意フレームへジャンプできる
 - Walking Distance テーブルを JS 側でも起動時に事前構築し、ヒューリスティック値をリアルタイム表示
 - コールドスタート対策のウォームアップ処理を内蔵
@@ -29,7 +31,8 @@ puzzle-visualizer/
 ├── main.js      # 状態管理・API通信・描画ロジック
 ├── style.css    # デザイントークン・レイアウト・アニメーション
 └── doc/
-    └── design.md  # 本ドキュメント
+    ├── design.md                    # 本ドキュメント
+    └── pdb_algorithm_explanation.md # PDB アルゴリズム解説
 ```
 
 ---
@@ -53,16 +56,16 @@ puzzle-visualizer/
 │           header（タイトル・サブタイトル・API docs リンク）              │
 ├─────────────────────┬────────────────────────┬────────────────────────┤
 │                     │  パネル 0               │  パネル 1               │
-│  コントロール        │  ドロップダウン(A*)      │  ドロップダウン(WD+IDA*)│
+│  コントロール        │  ドロップダウン(A*)      │  ドロップダウン(PDB+IDA*)│
 │  サイドバー         │  ┌──────────────────┐   │  ┌──────────────────┐   │
 │  （aside）          │  │  グリッド 224×224  │   │  │  グリッド 224×224  │   │
 │  ・Shuffle/Solve/   │  │  (loading overlay)│   │  │  (loading overlay)│   │
 │    Reset ボタン     │  └──────────────────┘   │  └──────────────────┘   │
 │  ・Max time 入力    │  統計（States/Moves/h/  │  統計（States/Moves/h/  │
 │  ・モード切替       │    Time）               │    Time）               │
-│  ・シークスライダー  │  h-compare バー         │  h-compare バー         │
+│  ・シークスライダー  │  h-compare バー(3行)    │  h-compare バー(3行)    │
 │  ・再生コントロール  │  ステータスバー          │  ステータスバー          │
-│  ・比較テーブル     │                         │                         │
+│  ・比較カードリスト  │                         │                         │
 │  ・API note         │                         │                         │
 └─────────────────────┴────────────────────────┴────────────────────────┘
 ```
@@ -84,29 +87,45 @@ puzzle-visualizer/
   ▼
 [Shuffle] ── ランダムウォーク150手で盤面をシャッフル
   │            initMH・initWD を更新（プログレスバーの基準値）
+  │            initPDB は Solve 完了後に最初の /solve_one レスポンスから取得
   │
   ▼
-[Solve] ────────────────────────────────────────────────────────────┐
-  │                                                                   │
-  ├─ setBusy(true) / showLoading(true)                                │
-  │                                                                   │
-  ├─ GET /warmup（失敗しても続行）                                     │
-  │      └─ Render コールドスタート対策                                 │
-  │                                                                   │
-  ├─ POST /compare                                                    │
-  │      body: { board, max_time }                                    │
-  │      signal: AbortController（max_time + 15s でタイムアウト）       │
-  │                                                                   │
-  ├─ 成功時                                                            │
-  │      ├─ 4アルゴリズム分の結果を results{} に格納                    │
-  │      ├─ 各アルゴリズムの buildPath / buildExploredPath でパス生成   │
-  │      ├─ updateComparisonTable() で比較テーブル更新                 │
-  │      ├─ setPanelResult() で統計表示更新                            │
-  │      └─ play() で Explore Replay の自動再生開始                    │
-  │                                                                   │
-  └─ 失敗時                                                            │
-         ├─ AbortError → ⏱ Timed out (Ns) をパネルステータスに表示     │
-         └─ TypeError(fetch失敗) → global-error バナーに表示           │
+[Solve] ────────────────────────────────────────────────────────────────┐
+  │                                                                       │
+  ├─ setBusy(true)                                                        │
+  ├─ algoStates を全キー 'waiting' に初期化                               │
+  ├─ updateComparisonTable()（全行 "—" 表示）                              │
+  │                                                                       │
+  ├─ GET /warmup（失敗しても続行）                                         │
+  │      └─ Render コールドスタート対策                                     │
+  │                                                                       │
+  ├─ for algo of ALGO_KEYS（'astar'→'idastar'→'wdastar'→'wdidastar'→'pdbidastar'）
+  │      │                                                                │
+  │      ├─ algoStates[algo] = 'running'                                  │
+  │      ├─ updateComparisonTable()（該当行にスピナー）                    │
+  │      ├─ updatePanelLoading()（パネルが該当アルゴなら Solving… 表示）   │
+  │      │                                                                │
+  │      ├─ POST /solve_one                                               │
+  │      │      body: { board, algo, max_time }                           │
+  │      │      signal: AbortController（max_time + 15s でタイムアウト）   │
+  │      │                                                                │
+  │      ├─ 成功時（HTTP 200）                                             │
+  │      │      ├─ initPDB = data.h_pdb（最初の non-zero 値で確定）        │
+  │      │      ├─ results[algo] に path / exploredPath / exploredHPdb を格納
+  │      │      ├─ algoStates[algo] = 'done'                              │
+  │      │      ├─ updateComparisonTable()（行を即時確定）                 │
+  │      │      └─ panelAlgos[p] === algo なら setPanelResult / renderAll  │
+  │      │                                                                │
+  │      ├─ HTTP 400 時（解けない盤面）                                    │
+  │      │      └─ showGlobalError / aborted=true / 残りアルゴはスキップ   │
+  │      │                                                                │
+  │      └─ AbortError / TypeError 時                                     │
+  │             ├─ algoStates[algo] = 'failed'                            │
+  │             └─ TypeError → showGlobalError / aborted=true             │
+  │                                                                       │
+  ├─ setBusy(false)                                                        │
+  ├─ updateComparisonTable()（allDone=true で★・カラー確定）               │
+  └─ 1件以上成功 → step=0 → renderAll() → play()                          │
                │
                ▼
           再生中 ── [Pause] / [◀◀] / [▶▶] / シークスライダー
@@ -133,12 +152,15 @@ puzzle-visualizer/
 | 定数 | 値 | 説明 |
 |---|---|---|
 | `API_BASE` | `"https://puzzle-api-m99y.onrender.com"` | API のベース URL |
-| `API_URL` | `API_BASE + '/compare'` | 4 アルゴリズム並列実行エンドポイント |
+| `API_URL` | `API_BASE + '/compare'` | （後方互換用・現在は未使用） |
 | `SIZE` | `4` | グリッドサイズ |
 | `CELL` | `56` | セルサイズ（px） |
 | `GAP` | `3` | タイルのセル内オフセット（px） |
 | `GOAL` | `[1,2,...,15,0]` | ゴール盤面 |
-| `ALGO_KEYS` | `['astar','idastar','wdastar','wdidastar']` | アルゴリズム識別キー |
+| `ALGO_KEYS` | `['astar','idastar','wdastar','wdidastar','pdbidastar']` | アルゴリズム識別キー（実行順） |
+| `ALGO_LABELS` | `{astar:'A*', ...}` | アルゴリズム表示名マップ |
+| `ALGO_DESC` | `{astar:'Best-first search', ...}` | パネルヘッダー用の説明文マップ |
+| `ALGO_BADGE` | `{astar:'b-a', ...}` | バッジ CSS クラスマップ |
 | `SPEED_MS` | `[1800,1200,800,550,400,280,180,110,60,30]` | 速度スライダー値 1〜10 に対応する ms |
 
 ### 6-2. グローバル状態
@@ -151,26 +173,33 @@ puzzle-visualizer/
 | `timer` | `number\|null` | `setTimeout` のタイマー ID |
 | `speed` | `number` | 1 ステップあたりのミリ秒 |
 | `replayMode` | `'explore'\|'solution'` | 再生モード |
-| `panelAlgos` | `string[]` | `panelAlgos[p]` = パネル p が現在表示しているアルゴリズムキー |
-| `results` | `object` | アルゴリズムキー→結果オブジェクトのマップ |
+| `panelAlgos` | `string[]` | `panelAlgos[p]` = パネル p が現在表示しているアルゴリズムキー。デフォルト `['astar','pdbidastar']` |
+| `results` | `object` | アルゴリズムキー → 結果オブジェクトのマップ |
+| `algoStates` | `object` | アルゴリズムキー → `'waiting'\|'running'\|'done'\|'failed'` |
 | `initMH` | `number` | Shuffle 時の初期 Manhattan 距離（プログレスバー基準） |
 | `initWD` | `number` | Shuffle 時の初期 Walking Distance（プログレスバー基準） |
+| `initPDB` | `number` | Solve 後の初期 PDB 値（最初の /solve_one レスポンスの `h_pdb`）。0 = 未取得 |
 | `tileEls` | `object[][]` | `tileEls[p][v]` = パネル p・タイル番号 v の DOM 要素 |
 
 #### results オブジェクトの構造
 
 ```js
 results[key] = {
-  // API から受け取るフィールド
+  // API から受け取るフィールド（/solve_one レスポンスに存在）
   moves: string[],
   states_explored: number,
   optimal_moves: number,
   time_ms: number,
   explored_log: number[][],
+  explored_h_pdb: number[],   // PDB h値の並走配列（explored_log と同長）
+  h_manhattan: number,        // 初期盤面の Manhattan+LC 値
+  h_wd: number,               // 初期盤面の WD 値
+  h_pdb: number,              // 初期盤面の PDB 値（PDB未ロード時は 0）
 
   // JS 側で生成するフィールド（成功時のみ）
-  path: number[][],          // moves から構築した盤面スナップショット列
-  exploredPath: number[][], // explored_log をそのまま変換
+  path: number[][],           // moves から構築した盤面スナップショット列
+  exploredPath: number[][],   // explored_log をそのまま変換
+  exploredHPdb: number[],     // explored_h_pdb をそのまま保持（step index で参照）
 
   // エラー時のみ
   error: string,
@@ -193,22 +222,23 @@ solver.py の `_build_wd_table` / `_row_config` / `_col_config` を JS で完全
 
 | 関数 | 説明 |
 |---|---|
-| `randomShuffle()` | ゴールからランダムウォーク 150 手でシャッフル。隣接盤面を列挙して無作為選択 |
+| `randomShuffle()` | ゴールからランダムウォーク 150 手でシャッフル |
 | `buildPath(initial, moves)` | API の `moves` リストから盤面スナップショット列を生成 |
 | `buildExploredPath(log)` | API の `explored_log` を盤面配列に変換 |
-| `initGrids()` | タイル DOM 要素を生成してグリッドに挿入。既存タイルを削除後に再生成 |
+| `initGrids()` | タイル DOM 要素を生成してグリッドに挿入 |
 | `placePanel(p, st)` | CSS `left/top` でタイルを絶対配置。正位置タイルに `.correct` クラスを付与 |
 | `flashPanel(p, from, to)` | 移動したタイルに `.moved` クラスを付与してグロウアニメーションを発火 |
 | `activePath(p)` | パネル p の現在モードに対応するパス配列を返す |
 | `renderPanel(p, prevStep)` | パネル p を現在 step で描画。prevStep がある場合はフラッシュ |
 | `renderAll(prevStep)` | 両パネルを描画し `syncProgress()` を呼ぶ |
-| `updateHBar(p, st)` | Manhattan・WD を計算し、h 統計と進捗バーを更新 |
+| `updateHBar(p, st)` | MH・WD を計算し統計と進捗バーを更新。Explore Replay 時は `exploredHPdb[step]` から PDB バーも更新 |
 | `setPanelResult(p)` | パネル p の統計（states/moves/time）と status を results から更新 |
 | `setPanelStatus(p, msg, type)` | ステータスバーのテキストと CSS クラスを設定 |
 | `updatePanelHeader(p)` | ドロップダウン選択に合わせてバッジ・説明文を更新 |
-| `updateComparisonTable()` | 4 アルゴリズムの比較テーブルを results から更新。最優秀に★を付与 |
+| `updateComparisonTable()` | 5 アルゴリズムの比較カードリストを results と algoStates から更新。`allDone` 時のみ★・カラーを確定 |
+| `updatePanelLoading()` | `algoStates[panelAlgos[p]] === 'running'` のパネルだけローディングオーバーレイを表示 |
 | `syncProgress()` | シークスライダーの max・value・disabled を更新 |
-| `showLoading(visible)` | 両パネルのローディングオーバーレイを表示/非表示 |
+| `showLoading(visible)` | 両パネルのローディングオーバーレイを一括表示/非表示 |
 | `showGlobalError(msg)` | グローバルエラーバナーを表示 |
 | `clearGlobalError()` | グローバルエラーバナーを非表示 |
 | `setBusy(busy)` | 解答中にボタン・ドロップダウンをすべて disabled にする |
@@ -221,8 +251,8 @@ solver.py の `_build_wd_table` / `_row_config` / `_col_config` を JS で完全
 | `setReplayMode(mode)` | Explore / Solution モードを切り替え |
 | `switchPanelAlgo(p, key)` | パネル p のアルゴリズムを切り替え、ヘッダー・統計・描画を更新 |
 | `applySpeed(val)` | スライダー値（1〜10）を `SPEED_MS` テーブルで ms に変換し `speed` に設定 |
-| `doShuffle()` | 盤面をシャッフルして initMH・initWD・results をリセット |
-| `doSolve()` | ウォームアップ → `/compare` 呼び出し → 結果をパネルに反映 |
+| `doShuffle()` | 盤面をシャッフルして initMH・initWD・initPDB・results・algoStates をリセット |
+| `doSolve()` | ウォームアップ → 5 本逐次 `/solve_one` 呼び出し → 結果をリアルタイムにパネルへ反映 |
 | `doReset()` | ゴール盤面に戻す |
 
 ---
@@ -232,35 +262,50 @@ solver.py の `_build_wd_table` / `_row_config` / `_col_config` を JS で完全
 ```
 doSolve() 呼び出し
       │
-      ├─ setBusy(true) / showLoading(true)
+      ├─ setBusy(true)
+      ├─ algoStates = { astar:'waiting', ..., pdbidastar:'waiting' }
+      ├─ updateComparisonTable()（全行 "—"）
       │
       ├─ GET /warmup（失敗しても continue）
       │
-      ├─ POST /compare
-      │      body: { board: state, max_time: maxTime }
-      │      signal: AbortController（max_time + 15s）
+      ├─ for algo of ['astar','idastar','wdastar','wdidastar','pdbidastar']
+      │      │
+      │      ├─ aborted なら { error:'Skipped' } で skip
+      │      │
+      │      ├─ algoStates[algo] = 'running'
+      │      ├─ updateComparisonTable()（スピナー表示）
+      │      ├─ updatePanelLoading()
+      │      │
+      │      ├─ POST /solve_one
+      │      │      body: { board, algo, max_time }
+      │      │      signal: AbortController（max_time + 15s）
+      │      │
+      │      ├─ res.ok チェック
+      │      │      400 → aborted=true, showGlobalError
+      │      │      他NG → per-algo failed
+      │      │
+      │      ├─ data = await res.json()
+      │      ├─ initPDB = data.h_pdb（最初の non-zero で確定）
+      │      │
+      │      ├─ data.error あり → algoStates='failed', results[algo]={error,...}
+      │      │   なし           → algoStates='done',
+      │      │                     results[algo]={...data,
+      │      │                       path:buildPath(...),
+      │      │                       exploredPath:buildExploredPath(...),
+      │      │                       exploredHPdb: data.explored_h_pdb ?? []}
+      │      │
+      │      └─ updateComparisonTable() / updatePanelLoading()
+      │         panelAlgos[p]===algo → setPanelResult / renderAll
       │
-      ├─ res.ok チェック
-      │      NG → body.detail を Error として throw
-      │
-      ├─ data = await res.json()
-      │
-      ├─ for key of ALGO_KEYS
-      │      d.error あり → results[key] = { ...d }
-      │      なし         → results[key] = {
-      │                         ...d,
-      │                         path:         buildPath(board, d.moves),
-      │                         exploredPath: buildExploredPath(d.explored_log),
-      │                       }
-      │
-      ├─ showLoading(false) / setBusy(false)
-      ├─ updateComparisonTable()
-      ├─ for p: setPanelResult(p)
-      └─ step=0 → renderAll() → play()
+      ├─ setBusy(false)
+      ├─ updateComparisonTable()（allDone=true → ★ 確定）
+      └─ 成功アルゴが1件以上 → step=0 → renderAll() → play()
 
-  catch (err)
-      AbortError  → setPanelStatus(p, "⏱ Timed out (Ns)", 'error-timeout')
-      TypeError   → showGlobalError("Cannot reach API…")
+  catch (AbortError)
+      results[algo] = { error: 'Timed out (Ns)', ... }
+  catch (TypeError / fetch失敗)
+      showGlobalError("Cannot reach API…")
+      aborted = true
 ```
 
 ---
@@ -269,8 +314,8 @@ doSolve() 呼び出し
 
 | モード | データソース | スライダー表示 | 用途 |
 |---|---|---|---|
-| Explore Replay | `results[key].exploredPath`（`explored_log`） | ステップ N / M | アルゴリズムがどの順番で盤面を探索したか |
-| Solution Replay | `results[key].path`（`moves` から構築） | ステップ N / M | 最短解答手順のステップ |
+| Explore Replay | `results[key].exploredPath`（`explored_log`） | ステップ N / M | アルゴリズムがどの順番で盤面を探索したか。PDB バーがリアルタイム更新される |
+| Solution Replay | `results[key].path`（`moves` から構築） | ステップ N / M | 最短解答手順のステップ。PDB バーは "PDB:—" 固定 |
 
 - 両パネルは**同じ `step` 変数を共有**する
 - スライダーの最大値は `max(パネル 0 のパス長, パネル 1 のパス長) - 1`
@@ -278,16 +323,34 @@ doSolve() 呼び出し
 
 ---
 
-## 9. 比較テーブル
+## 9. 比較カードリスト
 
-`updateComparisonTable()` が全 4 アルゴリズムの結果を描画する。
+`updateComparisonTable()` が全 5 アルゴリズムの結果を描画する。
+
+**レイアウト構造（横持ちテーブルから縦持ちカードリストに変更）：**
+
+```
+ALGORITHM   STS   STATES    TIME
+[A*]         ✓    40,489    7.47s   ▶
+[IDA*]       ✓    61,941    9.68s   ▶
+[WD+A*]      ✓    27,785    7.90s   ▶
+[WD+IDA*]    ✓    41,621    9.88s   ▶
+[PDB+IDA*]   ✓   10,687★   3.50s   ▶
+```
 
 | 項目 | ロジック |
 |---|---|
-| Status | 成功: `✓`（緑ピル）、失敗: `✗`（赤ピル） |
-| States | 最少★ = `val-best`（緑）、5倍超 = `val-slow`（橙）、それ以外 = `val-mid`（インディゴ） |
-| Time | 最速★ = `val-best`（緑）、5倍超 = `val-slow`（橙）、それ以外 = `val-mid`（インディゴ） |
+| waiting | 全セル "—"（Solve 未実行） |
+| running | Status セルにインラインスピナー（`.tbl-spinner`）。States/Time は "—" |
+| Status（done） | 成功: `✓`（緑ピル）、失敗: `✗`（赤ピル） |
+| States | `allDone` 時のみ: 最少★ = `val-best`（緑）、5倍超 = `val-slow`（橙）、それ以外 = `val-mid` |
+| Time | `allDone` 時のみ: 最速★ = `val-best`（緑）、5倍超 = `val-slow`（橙）、それ以外 = `val-mid` |
 | Replay | 各行の [▶] ボタン押下で該当アルゴリズムをパネルに表示し Solution Replay 開始 |
+
+**ID 命名規則（JS との対応）：**
+
+各行の可変セルは `id="tbl-{algo}-{metric}"` を持つ `<span>` 要素。  
+ラッパー `<div class="cmp-col-*">` がレイアウトを担うため、JS の `el.className = 'tbl-val ...'` がラッパーに影響しない。
 
 ---
 
@@ -328,6 +391,7 @@ Dark Glass パレットをベースにした暗色テーマ。
 | `--idastar-color` | `#34d399` | IDA* バッジ色（エメラルド） |
 | `--wda-color` | `#fb923c` | WD+A* バッジ色（オレンジ） |
 | `--wida-color` | `#c084fc` | WD+IDA* バッジ色（パープル） |
+| `--pdb-color` | `#2dd4bf` | PDB+IDA* バッジ色（ティール） |
 | `--correct` | `#1d4ed8` | 正位置タイルの背景 |
 | `--success` | `#10b981` | Solve ボタン / Solved! ステータス |
 | `--cell` | `56px` | グリッドのセルサイズ（4×56 = 224px） |
@@ -342,6 +406,7 @@ Dark Glass パレットをベースにした暗色テーマ。
 | `.b-ida` | IDA* | エメラルド（`--idastar-color`） |
 | `.b-wda` | WD+A* | オレンジ（`--wda-color`） |
 | `.b-wida` | WD+IDA* | パープル（`--wida-color`） |
+| `.b-pdb` | PDB+IDA* | ティール（`--pdb-color`） |
 
 ### 11-3. タイルアニメーション
 
@@ -349,20 +414,39 @@ Dark Glass パレットをベースにした暗色テーマ。
 - **フラッシュ**：`@keyframes tile-moved`（インディゴのグロウ）を `.moved` クラスで発火（400ms）
 - **正位置**：ゴール位置に収まったタイルに `.correct` クラスを付与（青色ハイライト + グロウ）
 
-### 11-4. h-compare プログレスバー
+### 11-4. h-compare プログレスバー（3 行）
 
-各パネルの下部に Manhattan・Walking Distance の進捗を 2 本のバーで表示する。
+各パネルの下部に Manhattan・Walking Distance・PDB の進捗を 3 本のバーで表示する。
 
 ```
-MH:8  ████████████████░░░░░░░░  ← --accent-hi (インディゴ)
-WD:10 ████████████████████░░░░  ← #34d399 (エメラルド)
+MH:8   ████████████████░░░░░░░░  ← --accent-hi (インディゴ)
+WD:10  ████████████████████░░░░  ← #34d399 (エメラルド)
+PDB:32 ████████████░░░░░░░░░░░░  ← --pdb-color (ティール)
 ```
 
 - **進捗率** = `(1 - 現在h / 初期h) × 100%`（0% = 初期状態、100% = ゴール）
-- 初期 h は Shuffle 時に `initMH`・`initWD` として記録する
-- ゴール（h=0）で 100% になる
+- MH・WD の初期値は Shuffle 時に `initMH`・`initWD` として記録する
+- `initPDB` は Solve 後に最初の `/solve_one` レスポンスの `h_pdb` から取得する
+- PDB バーは **Explore Replay のみ**有効。`exploredHPdb[step]` を参照する（Solution Replay では "PDB:—"）
+- IDA* 系は h_pdb が一時的に初期値を超えることがある（バックトラック）→ width を `[0, 100%]` にクランプ
 
-### 11-5. アクセシビリティ対応
+### 11-5. 比較カードリスト（.cmp-row）
+
+```css
+.cmp-row         /* flex コンテナ。1行 = 1アルゴリズム */
+.cmp-col-badge   /* flex: 0 0 66px — バッジ列 */
+.cmp-col-status  /* flex: 0 0 22px — ✓/✗/スピナー列 */
+.cmp-col-states  /* flex: 1        — States 列（右寄せ） */
+.cmp-col-time    /* flex: 0 0 40px — Time 列（右寄せ） */
+.cmp-col-replay  /* flex: 0 0 20px — [▶] ボタン列 */
+```
+
+### 11-6. インラインスピナー（.tbl-spinner）
+
+比較カードリストの Status セルに表示する 9px のインラインスピナー。  
+`@keyframes spin`（既存の大型スピナーと共用）でアニメーションする。
+
+### 11-7. アクセシビリティ対応
 
 | 対応 | 内容 |
 |---|---|
@@ -380,7 +464,8 @@ WD:10 ████████████████████░░░░  
 | バージョン | 日付 | 変更内容 |
 |---|---|---|
 | 1.0.0 | 2026-05-31 | 初版。A*・IDA* の 2 アルゴリズム、固定パネル |
-| 2.0.0 | 2026-06-02 | WD+A*・WD+IDA* を追加。パネルをドロップダウンで切り替え可能に。h-compare バー・比較テーブルの★カラーコーディングを追加。Walking Distance を JS 側でも事前構築 |
+| 2.0.0 | 2026-06-01 | WD+A*・WD+IDA* を追加。パネルをドロップダウンで切り替え可能に。h-compare バー（MH/WD 2行）・比較テーブルの★カラーコーディングを追加。Walking Distance を JS 側でも事前構築 |
+| 3.0.0 | 2026-06-02 | PDB+IDA* を 5 本目として追加。`/compare` 一括呼び出しから `/solve_one` 逐次呼び出しに変更（algoStates ステートマシン・スピナー・逐次フィードバック）。比較表を横持ちテーブルから縦持ちカードリストに刷新。h-compare バーに PDB バー（3行目）を追加。PDB バーは Explore Replay で `exploredHPdb[step]` を参照 |
 
 ---
 
