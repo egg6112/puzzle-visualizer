@@ -9,25 +9,28 @@ const CELL = 56;   // px per grid cell  → 4 × 56 = 224 px
 const GAP  = 3;    // px tile offset inside cell
 
 const GOAL      = [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,0];
-const ALGO_KEYS = ['astar','idastar','wdastar','wdidastar'];
+const ALGO_KEYS = ['astar','idastar','wdastar','wdidastar','pdbidastar'];
 
 const ALGO_LABELS = {
-  astar:     'A*',
-  idastar:   'IDA*',
-  wdastar:   'WD+A*',
-  wdidastar: 'WD+IDA*',
+  astar:      'A*',
+  idastar:    'IDA*',
+  wdastar:    'WD+A*',
+  wdidastar:  'WD+IDA*',
+  pdbidastar: 'PDB+IDA*',
 };
 const ALGO_DESC = {
-  astar:     'Best-first search',
-  idastar:   'Iterative deepening',
-  wdastar:   'WD heuristic, A*',
-  wdidastar: 'WD heuristic, IDA*',
+  astar:      'Best-first search',
+  idastar:    'Iterative deepening',
+  wdastar:    'WD heuristic, A*',
+  wdidastar:  'WD heuristic, IDA*',
+  pdbidastar: 'PDB heuristic, IDA*',
 };
 const ALGO_BADGE = {
-  astar:     'b-a',
-  idastar:   'b-ida',
-  wdastar:   'b-wda',
-  wdidastar: 'b-wida',
+  astar:      'b-a',
+  idastar:    'b-ida',
+  wdastar:    'b-wda',
+  wdidastar:  'b-wida',
+  pdbidastar: 'b-pdb',
 };
 
 const MOVE_DELTA = { up:[-1,0], down:[1,0], left:[0,-1], right:[0,1] };
@@ -41,14 +44,15 @@ let speed      = 400;
 let replayMode = 'explore';
 
 // panelAlgos[i] = which algo key panel i is currently showing
-let panelAlgos = ['astar', 'wdidastar'];
+let panelAlgos = ['astar', 'pdbidastar'];
 
 // results keyed by algo key; undefined = not yet solved
 let results = {};
 
 // initial h values captured when board is set (used for progress bar scale)
-let initMH = 0;
-let initWD = 0;
+let initMH  = 0;
+let initWD  = 0;
+let initPDB = 0;  // from data.h_pdb; 0 means PDB not loaded or board at goal
 
 // tile DOM elements per panel: tileEls[panelIdx][value 1-15] = <div>
 const tileEls = [{}, {}];
@@ -250,7 +254,7 @@ function updateHBar(p, st) {
   const wd = walkingDistance(st);
 
   // Progress ratio: 0% at initial board (h=initH), 100% at goal (h=0).
-  // Timeout stays at 0% (no progress). Goal reaches 100%.
+  // Clamped to [0, 100] so bars never overflow the track.
   const mhPct = initMH > 0 ? Math.max(0, Math.min(100, Math.round((1 - mh / initMH) * 100))) : 0;
   const wdPct = initWD > 0 ? Math.max(0, Math.min(100, Math.round((1 - wd / initWD) * 100))) : 0;
 
@@ -261,6 +265,36 @@ function updateHBar(p, st) {
   document.getElementById('p' + p + '-wdlabel').textContent = 'WD:' + wd;
   document.getElementById('p' + p + '-mhbar').style.width = mhPct + '%';
   document.getElementById('p' + p + '-wdbar').style.width = wdPct + '%';
+
+  // PDB bar: index into exploredHPdb using the current explore-step index.
+  // Only valid in Explore Replay; show "—" in Solution Replay or when unavailable.
+  const pdblabel = document.getElementById('p' + p + '-pdblabel');
+  const pdbbar   = document.getElementById('p' + p + '-pdbbar');
+  let pdbVal = null;
+
+  if (replayMode === 'explore') {
+    const key = panelAlgos[p];
+    const r   = results[key];
+    if (r && !r.error && r.exploredHPdb && r.exploredHPdb.length > 0
+        && initPDB > 0) {
+      const exploredPath = r.exploredPath;
+      if (exploredPath) {
+        const idx = Math.min(step, exploredPath.length - 1);
+        const raw = r.exploredHPdb[idx];
+        if (typeof raw === 'number') pdbVal = raw;
+      }
+    }
+  }
+
+  if (pdbVal !== null) {
+    // Clamp to [0, 100%]: h_pdb can temporarily exceed initPDB during IDA* backtrack
+    const pdbPct = Math.max(0, Math.min(100, Math.round((1 - pdbVal / initPDB) * 100)));
+    pdblabel.textContent  = 'PDB:' + pdbVal;
+    pdbbar.style.width    = pdbPct + '%';
+  } else {
+    pdblabel.textContent  = 'PDB:—';
+    pdbbar.style.width    = '0%';
+  }
 }
 
 // ── Stats & status ────────────────────────────────────────────────────────────
@@ -483,6 +517,7 @@ function doShuffle() {
   results = {};
   initMH  = manhattan(board);
   initWD  = walkingDistance(board);
+  initPDB = 0;
   for (let p = 0; p < 2; p++) { setPanelResult(p); setPanelStatus(p, 'Waiting', 'waiting'); }
   updateComparisonTable();
   step = 0; renderAll();
@@ -498,7 +533,8 @@ async function doSolve() {
   const maxTime = Math.min(300, Math.max(1, isNaN(_raw) ? 30 : _raw));
   const solveStart = Date.now();
   const ctrl    = new AbortController();
-  const timeout = setTimeout(() => ctrl.abort(), (maxTime + 15) * 1000);
+  // Sequential server: worst case = 5 × max_time. Add 30 s network buffer.
+  const timeout = setTimeout(() => ctrl.abort(), (maxTime * 5 + 30) * 1000);
 
   try {
     // Wake-up ping for Render cold-start
@@ -519,6 +555,10 @@ async function doSolve() {
 
     const data = await res.json();
 
+    // h_pdb of the initial board — used as the 100% baseline for PDB bars.
+    // 0 when PDB files are not loaded on the server.
+    initPDB = data.h_pdb ?? 0;
+
     // Store results with pre-built paths
     for (const key of ALGO_KEYS) {
       const d = data[key];
@@ -530,6 +570,7 @@ async function doSolve() {
           ...d,
           path:         buildPath(board, d.moves),
           exploredPath: buildExploredPath(d.explored_log ?? []),
+          exploredHPdb: d.explored_h_pdb ?? [],
         };
       }
     }
@@ -566,6 +607,7 @@ function doReset() {
   results = {};
   initMH  = 0;
   initWD  = 0;
+  initPDB = 0;
   for (let p = 0; p < 2; p++) { setPanelResult(p); setPanelStatus(p, 'Waiting', 'waiting'); }
   updateComparisonTable();
   step = 0; renderAll();

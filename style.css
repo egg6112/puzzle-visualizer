@@ -9,6 +9,7 @@
   --idastar-color: #34d399;
   --wda-color:     #fb923c;
   --wida-color:    #c084fc;
+  --pdb-color:     #2dd4bf;
   --correct:       #1d4ed8;
   --correct-hi:    #3b82f6;
   --success:       #10b981;
@@ -171,6 +172,7 @@ td.tbl-val.val-fail { color: #f87171; }
 .b-ida  { background: rgba(16,185,129,0.15);  color: var(--idastar-color); border: 1px solid rgba(16,185,129,0.3); }
 .b-wda  { background: rgba(251,146,60,0.18);  color: var(--wda-color);     border: 1px solid rgba(251,146,60,0.35); }
 .b-wida { background: rgba(192,132,252,0.18); color: var(--wida-color);    border: 1px solid rgba(192,132,252,0.35); }
+.b-pdb  { background: rgba(45,212,191,0.15);  color: var(--pdb-color);     border: 1px solid rgba(45,212,191,0.3); }
 
 .status-pill {
   display: inline-flex; align-items: center;
@@ -344,8 +346,9 @@ select:focus { border-color: var(--accent); }
   font-size: 0.6rem;
   text-align: right;
 }
-.mh-label { color: var(--accent-hi); }
-.wd-label { color: #34d399; }
+.mh-label  { color: var(--accent-hi); }
+.wd-label  { color: #34d399; }
+.pdb-label { color: var(--pdb-color); }
 .h-bar-track {
   flex: 1;
   height: 5px;
@@ -359,8 +362,9 @@ select:focus { border-color: var(--accent); }
   transition: width 0.2s ease;
   min-width: 0;
 }
-.h-bar-mh { background: var(--accent-hi); }
-.h-bar-wd { background: #34d399; }
+.h-bar-mh  { background: var(--accent-hi); }
+.h-bar-wd  { background: #34d399; }
+.h-bar-pdb { background: var(--pdb-color); }
 .h-note   { white-space: nowrap; color: var(--text-muted); font-size: 0.58rem; flex-shrink: 0; }
 
 /* ── Panel status ────────────────────────────────────────────────────────── */

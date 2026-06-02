@@ -11,7 +11,7 @@
 <header>
   <h1>15-Puzzle Algorithm Comparator</h1>
   <p class="subtitle">
-    A* · IDA* · WD+A* · WD+IDA* &middot; Manhattan + Linear Conflict + Walking Distance
+    A* · IDA* · WD+A* · WD+IDA* · PDB+IDA* &middot; Manhattan + Linear Conflict + Walking Distance + PDB
     &middot; <a href="https://puzzle-api-m99y.onrender.com/docs" target="_blank" rel="noopener">API docs ↗</a>
   </p>
 </header>
@@ -72,29 +72,33 @@
             <th><span class="algo-badge b-ida">IDA*</span></th>
             <th><span class="algo-badge b-wda">WD+A*</span></th>
             <th><span class="algo-badge b-wida">WD+IDA*</span></th>
+            <th><span class="algo-badge b-pdb">PDB*</span></th>
           </tr>
         </thead>
         <tbody>
           <tr>
             <td class="metric">Status</td>
-            <td id="tbl-astar-status"     class="tbl-val">—</td>
-            <td id="tbl-idastar-status"   class="tbl-val">—</td>
-            <td id="tbl-wdastar-status"   class="tbl-val">—</td>
-            <td id="tbl-wdidastar-status" class="tbl-val">—</td>
+            <td id="tbl-astar-status"       class="tbl-val">—</td>
+            <td id="tbl-idastar-status"     class="tbl-val">—</td>
+            <td id="tbl-wdastar-status"     class="tbl-val">—</td>
+            <td id="tbl-wdidastar-status"   class="tbl-val">—</td>
+            <td id="tbl-pdbidastar-status"  class="tbl-val">—</td>
           </tr>
           <tr>
             <td class="metric">States</td>
-            <td id="tbl-astar-states"     class="tbl-val">—</td>
-            <td id="tbl-idastar-states"   class="tbl-val">—</td>
-            <td id="tbl-wdastar-states"   class="tbl-val">—</td>
-            <td id="tbl-wdidastar-states" class="tbl-val">—</td>
+            <td id="tbl-astar-states"       class="tbl-val">—</td>
+            <td id="tbl-idastar-states"     class="tbl-val">—</td>
+            <td id="tbl-wdastar-states"     class="tbl-val">—</td>
+            <td id="tbl-wdidastar-states"   class="tbl-val">—</td>
+            <td id="tbl-pdbidastar-states"  class="tbl-val">—</td>
           </tr>
           <tr>
             <td class="metric">Time</td>
-            <td id="tbl-astar-time"     class="tbl-val">—</td>
-            <td id="tbl-idastar-time"   class="tbl-val">—</td>
-            <td id="tbl-wdastar-time"   class="tbl-val">—</td>
-            <td id="tbl-wdidastar-time" class="tbl-val">—</td>
+            <td id="tbl-astar-time"       class="tbl-val">—</td>
+            <td id="tbl-idastar-time"     class="tbl-val">—</td>
+            <td id="tbl-wdastar-time"     class="tbl-val">—</td>
+            <td id="tbl-wdidastar-time"   class="tbl-val">—</td>
+            <td id="tbl-pdbidastar-time"  class="tbl-val">—</td>
           </tr>
           <tr>
             <td class="metric">Replay</td>
@@ -102,6 +106,7 @@
             <td><button class="replay-btn" data-algo="idastar">&#9654;</button></td>
             <td><button class="replay-btn" data-algo="wdastar">&#9654;</button></td>
             <td><button class="replay-btn" data-algo="wdidastar">&#9654;</button></td>
+            <td><button class="replay-btn" data-algo="pdbidastar">&#9654;</button></td>
           </tr>
         </tbody>
       </table>
@@ -126,10 +131,11 @@
             <span class="algo-desc" id="p0-desc">Best-first search</span>
           </div>
           <select id="p0-select">
-            <option value="astar"     selected>A*</option>
-            <option value="idastar"          >IDA*</option>
-            <option value="wdastar"          >WD + A*</option>
-            <option value="wdidastar"        >WD + IDA*</option>
+            <option value="astar"      selected>A*</option>
+            <option value="idastar"           >IDA*</option>
+            <option value="wdastar"           >WD + A*</option>
+            <option value="wdidastar"         >WD + IDA*</option>
+            <option value="pdbidastar"        >PDB + IDA*</option>
           </select>
         </div>
 
@@ -150,12 +156,16 @@
 
         <div class="h-compare" id="p0-hcompare">
           <div class="h-row">
-            <span class="h-label mh-label" id="p0-mhlabel">MH:0</span>
-            <div class="h-bar-track"><div class="h-bar h-bar-mh" id="p0-mhbar" style="width:0%"></div></div>
+            <span class="h-label mh-label"  id="p0-mhlabel">MH:0</span>
+            <div class="h-bar-track"><div class="h-bar h-bar-mh"  id="p0-mhbar"  style="width:0%"></div></div>
           </div>
           <div class="h-row">
-            <span class="h-label wd-label" id="p0-wdlabel">WD:0</span>
-            <div class="h-bar-track"><div class="h-bar h-bar-wd" id="p0-wdbar" style="width:0%"></div></div>
+            <span class="h-label wd-label"  id="p0-wdlabel">WD:0</span>
+            <div class="h-bar-track"><div class="h-bar h-bar-wd"  id="p0-wdbar"  style="width:0%"></div></div>
+          </div>
+          <div class="h-row">
+            <span class="h-label pdb-label" id="p0-pdblabel">PDB:—</span>
+            <div class="h-bar-track"><div class="h-bar h-bar-pdb" id="p0-pdbbar" style="width:0%"></div></div>
           </div>
         </div>
 
@@ -170,10 +180,11 @@
             <span class="algo-desc" id="p1-desc">WD heuristic, IDA*</span>
           </div>
           <select id="p1-select">
-            <option value="astar"          >A*</option>
-            <option value="idastar"        >IDA*</option>
-            <option value="wdastar"        >WD + A*</option>
-            <option value="wdidastar" selected>WD + IDA*</option>
+            <option value="astar"               >A*</option>
+            <option value="idastar"             >IDA*</option>
+            <option value="wdastar"             >WD + A*</option>
+            <option value="wdidastar"           >WD + IDA*</option>
+            <option value="pdbidastar" selected >PDB + IDA*</option>
           </select>
         </div>
 
@@ -194,12 +205,16 @@
 
         <div class="h-compare" id="p1-hcompare">
           <div class="h-row">
-            <span class="h-label mh-label" id="p1-mhlabel">MH:0</span>
-            <div class="h-bar-track"><div class="h-bar h-bar-mh" id="p1-mhbar" style="width:0%"></div></div>
+            <span class="h-label mh-label"  id="p1-mhlabel">MH:0</span>
+            <div class="h-bar-track"><div class="h-bar h-bar-mh"  id="p1-mhbar"  style="width:0%"></div></div>
           </div>
           <div class="h-row">
-            <span class="h-label wd-label" id="p1-wdlabel">WD:0</span>
-            <div class="h-bar-track"><div class="h-bar h-bar-wd" id="p1-wdbar" style="width:0%"></div></div>
+            <span class="h-label wd-label"  id="p1-wdlabel">WD:0</span>
+            <div class="h-bar-track"><div class="h-bar h-bar-wd"  id="p1-wdbar"  style="width:0%"></div></div>
+          </div>
+          <div class="h-row">
+            <span class="h-label pdb-label" id="p1-pdblabel">PDB:—</span>
+            <div class="h-bar-track"><div class="h-bar h-bar-pdb" id="p1-pdbbar" style="width:0%"></div></div>
           </div>
         </div>
 
