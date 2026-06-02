@@ -64,52 +64,54 @@
     <!-- Comparison table -->
     <div class="comparison-card">
       <div class="comparison-title">Comparison</div>
-      <table>
-        <thead>
-          <tr>
-            <th>Metric</th>
-            <th><span class="algo-badge b-a">A*</span></th>
-            <th><span class="algo-badge b-ida">IDA*</span></th>
-            <th><span class="algo-badge b-wda">WD+A*</span></th>
-            <th><span class="algo-badge b-wida">WD+IDA*</span></th>
-            <th><span class="algo-badge b-pdb">PDB*</span></th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr>
-            <td class="metric">Status</td>
-            <td id="tbl-astar-status"       class="tbl-val">—</td>
-            <td id="tbl-idastar-status"     class="tbl-val">—</td>
-            <td id="tbl-wdastar-status"     class="tbl-val">—</td>
-            <td id="tbl-wdidastar-status"   class="tbl-val">—</td>
-            <td id="tbl-pdbidastar-status"  class="tbl-val">—</td>
-          </tr>
-          <tr>
-            <td class="metric">States</td>
-            <td id="tbl-astar-states"       class="tbl-val">—</td>
-            <td id="tbl-idastar-states"     class="tbl-val">—</td>
-            <td id="tbl-wdastar-states"     class="tbl-val">—</td>
-            <td id="tbl-wdidastar-states"   class="tbl-val">—</td>
-            <td id="tbl-pdbidastar-states"  class="tbl-val">—</td>
-          </tr>
-          <tr>
-            <td class="metric">Time</td>
-            <td id="tbl-astar-time"       class="tbl-val">—</td>
-            <td id="tbl-idastar-time"     class="tbl-val">—</td>
-            <td id="tbl-wdastar-time"     class="tbl-val">—</td>
-            <td id="tbl-wdidastar-time"   class="tbl-val">—</td>
-            <td id="tbl-pdbidastar-time"  class="tbl-val">—</td>
-          </tr>
-          <tr>
-            <td class="metric">Replay</td>
-            <td><button class="replay-btn" data-algo="astar">&#9654;</button></td>
-            <td><button class="replay-btn" data-algo="idastar">&#9654;</button></td>
-            <td><button class="replay-btn" data-algo="wdastar">&#9654;</button></td>
-            <td><button class="replay-btn" data-algo="wdidastar">&#9654;</button></td>
-            <td><button class="replay-btn" data-algo="pdbidastar">&#9654;</button></td>
-          </tr>
-        </tbody>
-      </table>
+      <!-- Card list: 1 row = 1 algorithm. IDs preserved for JS compatibility. -->
+      <div class="cmp-row cmp-header">
+        <div class="cmp-col-badge">Algorithm</div>
+        <div class="cmp-col-status">Sts</div>
+        <div class="cmp-col-states">States</div>
+        <div class="cmp-col-time">Time</div>
+        <div class="cmp-col-replay"></div>
+      </div>
+
+      <div class="cmp-row">
+        <div class="cmp-col-badge"><span class="algo-badge b-a">A*</span></div>
+        <div class="cmp-col-status"><span id="tbl-astar-status"      class="tbl-val">—</span></div>
+        <div class="cmp-col-states"><span id="tbl-astar-states"      class="tbl-val">—</span></div>
+        <div class="cmp-col-time"  ><span id="tbl-astar-time"        class="tbl-val">—</span></div>
+        <div class="cmp-col-replay"><button class="replay-btn" data-algo="astar">&#9654;</button></div>
+      </div>
+
+      <div class="cmp-row">
+        <div class="cmp-col-badge"><span class="algo-badge b-ida">IDA*</span></div>
+        <div class="cmp-col-status"><span id="tbl-idastar-status"    class="tbl-val">—</span></div>
+        <div class="cmp-col-states"><span id="tbl-idastar-states"    class="tbl-val">—</span></div>
+        <div class="cmp-col-time"  ><span id="tbl-idastar-time"      class="tbl-val">—</span></div>
+        <div class="cmp-col-replay"><button class="replay-btn" data-algo="idastar">&#9654;</button></div>
+      </div>
+
+      <div class="cmp-row">
+        <div class="cmp-col-badge"><span class="algo-badge b-wda">WD+A*</span></div>
+        <div class="cmp-col-status"><span id="tbl-wdastar-status"    class="tbl-val">—</span></div>
+        <div class="cmp-col-states"><span id="tbl-wdastar-states"    class="tbl-val">—</span></div>
+        <div class="cmp-col-time"  ><span id="tbl-wdastar-time"      class="tbl-val">—</span></div>
+        <div class="cmp-col-replay"><button class="replay-btn" data-algo="wdastar">&#9654;</button></div>
+      </div>
+
+      <div class="cmp-row">
+        <div class="cmp-col-badge"><span class="algo-badge b-wida">WD+IDA*</span></div>
+        <div class="cmp-col-status"><span id="tbl-wdidastar-status"  class="tbl-val">—</span></div>
+        <div class="cmp-col-states"><span id="tbl-wdidastar-states"  class="tbl-val">—</span></div>
+        <div class="cmp-col-time"  ><span id="tbl-wdidastar-time"    class="tbl-val">—</span></div>
+        <div class="cmp-col-replay"><button class="replay-btn" data-algo="wdidastar">&#9654;</button></div>
+      </div>
+
+      <div class="cmp-row">
+        <div class="cmp-col-badge"><span class="algo-badge b-pdb">PDB+IDA*</span></div>
+        <div class="cmp-col-status"><span id="tbl-pdbidastar-status" class="tbl-val">—</span></div>
+        <div class="cmp-col-states"><span id="tbl-pdbidastar-states" class="tbl-val">—</span></div>
+        <div class="cmp-col-time"  ><span id="tbl-pdbidastar-time"   class="tbl-val">—</span></div>
+        <div class="cmp-col-replay"><button class="replay-btn" data-algo="pdbidastar">&#9654;</button></div>
+      </div>
       <div class="tbl-note" id="tbl-note">★ Best &nbsp;·&nbsp; Green=best · Orange=slow</div>
     </div>
 

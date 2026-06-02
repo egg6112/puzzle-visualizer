@@ -135,7 +135,7 @@ h1 {
   color: var(--danger-text); font-size: 1rem; cursor: pointer; opacity: 0.7; padding: 0;
 }
 
-/* ── Comparison table ────────────────────────────────────────────────────── */
+/* ── Comparison card list ────────────────────────────────────────────────── */
 .comparison-card {
   background: var(--surface);
   border: 1px solid var(--border);
@@ -148,21 +148,42 @@ h1 {
   letter-spacing: 1.5px; text-transform: uppercase;
   color: var(--text-muted); margin-bottom: 0.45rem;
 }
-table { width: 100%; border-collapse: collapse; }
-thead th {
-  padding: 2px 3px; font-size: 0.65rem; font-weight: 600;
-  color: var(--text-muted); border-bottom: 1px solid var(--border);
-  text-align: right;
+
+/* Each row is a flex line: badge | status | states | time | replay */
+.cmp-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 2px;
 }
-thead th:first-child { text-align: left; }
-tbody tr:hover { background: rgba(99,102,241,0.04); }
-tbody td { padding: 3px 3px; font-size: 0.68rem; border-bottom: 1px solid rgba(45,63,88,0.5); }
-td.metric { color: var(--text-muted); font-size: 0.63rem; white-space: nowrap; }
-td.tbl-val { font-weight: 700; text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
-td.tbl-val.val-best { color: #34d399; }
-td.tbl-val.val-mid  { color: var(--accent-hi); }
-td.tbl-val.val-slow { color: #fb923c; }
-td.tbl-val.val-fail { color: #f87171; }
+.cmp-row:not(.cmp-header):hover { background: rgba(99,102,241,0.04); border-radius: 4px; }
+
+.cmp-header {
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 3px;
+  margin-bottom: 2px;
+}
+
+/* Column widths — badge: enough for "PDB+IDA*" badge incl. padding */
+.cmp-col-badge  { flex: 0 0 66px; }
+.cmp-col-status { flex: 0 0 22px; display: flex; align-items: center; justify-content: center; }
+.cmp-col-states { flex: 1; min-width: 56px; text-align: right; overflow: hidden; }
+.cmp-col-time   { flex: 0 0 40px; text-align: right; }
+.cmp-col-replay { flex: 0 0 20px; display: flex; align-items: center; justify-content: flex-end; }
+
+/* Header label text */
+.cmp-header > div {
+  font-size: 0.57rem; font-weight: 600;
+  letter-spacing: 0.5px; text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+/* tbl-val: used by JS on span elements — no td qualifier */
+.tbl-val { font-weight: 700; white-space: nowrap; font-variant-numeric: tabular-nums; font-size: 0.68rem; }
+.tbl-val.val-best { color: #34d399; }
+.tbl-val.val-mid  { color: var(--accent-hi); }
+.tbl-val.val-slow { color: #fb923c; }
+.tbl-val.val-fail { color: #f87171; }
 
 .algo-badge {
   display: inline-block; padding: 1px 5px; border-radius: 4px;
