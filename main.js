@@ -1,5 +1,5 @@
-// 15-Puzzle Algorithm Comparator — 5-algorithm edition
-// Panels show any of: A* / IDA* / WD+A* / WD+IDA* / PDB+IDA*, selectable via dropdown.
+// 15-Puzzle Algorithm Comparator — 7-algorithm edition
+// Panels show any of: A* / IDA* / WD+A* / WD+IDA* / PDB-row / PDB-diag / PDB-max, selectable via dropdown.
 
 const API_BASE = "https://puzzle-api-m99y.onrender.com";
 const API_URL  = API_BASE + '/compare';
@@ -9,28 +9,34 @@ const CELL = 56;   // px per grid cell  → 4 × 56 = 224 px
 const GAP  = 3;    // px tile offset inside cell
 
 const GOAL      = [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,0];
-const ALGO_KEYS = ['astar','idastar','wdastar','wdidastar','pdbidastar'];
+const ALGO_KEYS = ['astar','idastar','wdastar','wdidastar','pdbidastar','diagidastar','maxidastar'];
 
 const ALGO_LABELS = {
-  astar:      'A*',
-  idastar:    'IDA*',
-  wdastar:    'WD+A*',
-  wdidastar:  'WD+IDA*',
-  pdbidastar: 'PDB+IDA*',
+  astar:       'A*',
+  idastar:     'IDA*',
+  wdastar:     'WD+A*',
+  wdidastar:   'WD+IDA*',
+  pdbidastar:  'PDB-row',
+  diagidastar: 'PDB-diag',
+  maxidastar:  'PDB-max',
 };
 const ALGO_DESC = {
-  astar:      'Best-first search',
-  idastar:    'Iterative deepening',
-  wdastar:    'WD heuristic, A*',
-  wdidastar:  'WD heuristic, IDA*',
-  pdbidastar: 'PDB heuristic, IDA*',
+  astar:       'Best-first search',
+  idastar:     'Iterative deepening',
+  wdastar:     'WD heuristic, A*',
+  wdidastar:   'WD heuristic, IDA*',
+  pdbidastar:  'Row PDB, IDA*',
+  diagidastar: 'Diagonal PDB, IDA*',
+  maxidastar:  'max(row,diag) PDB, IDA*',
 };
 const ALGO_BADGE = {
-  astar:      'b-a',
-  idastar:    'b-ida',
-  wdastar:    'b-wda',
-  wdidastar:  'b-wida',
-  pdbidastar: 'b-pdb',
+  astar:       'b-a',
+  idastar:     'b-ida',
+  wdastar:     'b-wda',
+  wdidastar:   'b-wida',
+  pdbidastar:  'b-pdb',
+  diagidastar: 'b-pdb-diag',
+  maxidastar:  'b-pdb-max',
 };
 
 const MOVE_DELTA = { up:[-1,0], down:[1,0], left:[0,-1], right:[0,1] };

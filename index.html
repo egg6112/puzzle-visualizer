@@ -11,7 +11,7 @@
 <header>
   <h1>15-Puzzle Algorithm Comparator</h1>
   <p class="subtitle">
-    A* · IDA* · WD+A* · WD+IDA* · PDB+IDA* &middot; Manhattan + Linear Conflict + Walking Distance + PDB
+    A* · IDA* · WD+A* · WD+IDA* · PDB-row · PDB-diag · PDB-max &middot; MH+LC + WD + Pattern DB
     &middot; <a href="https://puzzle-api-m99y.onrender.com/docs" target="_blank" rel="noopener">API docs ↗</a>
   </p>
 </header>
@@ -106,11 +106,27 @@
       </div>
 
       <div class="cmp-row">
-        <div class="cmp-col-badge"><span class="algo-badge b-pdb">PDB+IDA*</span></div>
+        <div class="cmp-col-badge"><span class="algo-badge b-pdb">PDB-row</span></div>
         <div class="cmp-col-status"><span id="tbl-pdbidastar-status" class="tbl-val">—</span></div>
         <div class="cmp-col-states"><span id="tbl-pdbidastar-states" class="tbl-val">—</span></div>
         <div class="cmp-col-time"  ><span id="tbl-pdbidastar-time"   class="tbl-val">—</span></div>
         <div class="cmp-col-replay"><button class="replay-btn" data-algo="pdbidastar">&#9654;</button></div>
+      </div>
+
+      <div class="cmp-row">
+        <div class="cmp-col-badge"><span class="algo-badge b-pdb-diag">PDB-diag</span></div>
+        <div class="cmp-col-status"><span id="tbl-diagidastar-status" class="tbl-val">—</span></div>
+        <div class="cmp-col-states"><span id="tbl-diagidastar-states" class="tbl-val">—</span></div>
+        <div class="cmp-col-time"  ><span id="tbl-diagidastar-time"   class="tbl-val">—</span></div>
+        <div class="cmp-col-replay"><button class="replay-btn" data-algo="diagidastar">&#9654;</button></div>
+      </div>
+
+      <div class="cmp-row">
+        <div class="cmp-col-badge"><span class="algo-badge b-pdb-max">PDB-max</span></div>
+        <div class="cmp-col-status"><span id="tbl-maxidastar-status" class="tbl-val">—</span></div>
+        <div class="cmp-col-states"><span id="tbl-maxidastar-states" class="tbl-val">—</span></div>
+        <div class="cmp-col-time"  ><span id="tbl-maxidastar-time"   class="tbl-val">—</span></div>
+        <div class="cmp-col-replay"><button class="replay-btn" data-algo="maxidastar">&#9654;</button></div>
       </div>
       <div class="tbl-note" id="tbl-note">★ Best &nbsp;·&nbsp; Green=best · Orange=slow</div>
     </div>
@@ -137,7 +153,9 @@
             <option value="idastar"           >IDA*</option>
             <option value="wdastar"           >WD + A*</option>
             <option value="wdidastar"         >WD + IDA*</option>
-            <option value="pdbidastar"        >PDB + IDA*</option>
+            <option value="pdbidastar"        >PDB-row</option>
+            <option value="diagidastar"       >PDB-diag</option>
+            <option value="maxidastar"        >PDB-max</option>
           </select>
         </div>
 
@@ -186,7 +204,9 @@
             <option value="idastar"             >IDA*</option>
             <option value="wdastar"             >WD + A*</option>
             <option value="wdidastar"           >WD + IDA*</option>
-            <option value="pdbidastar" selected >PDB + IDA*</option>
+            <option value="pdbidastar" selected >PDB-row</option>
+            <option value="diagidastar"         >PDB-diag</option>
+            <option value="maxidastar"          >PDB-max</option>
           </select>
         </div>
 
