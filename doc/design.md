@@ -1,25 +1,26 @@
 # puzzle-visualizer 設計書
 
 作成日：2026-05-31  
-更新日：2026-06-02  
+更新日：2026-06-03  
 公開URL：`https://egg6112.github.io/puzzle-visualizer/`
 
 ---
 
 ## 1. 概要
 
-15パズル（4×4スライドパズル）を A*・IDA*・WD+A*・WD+IDA*・PDB+IDA* の 5 アルゴリズムで逐次解法し、探索過程と解答手順をアニメーションで比較できる静的 Web アプリ。
+15パズル（4×4スライドパズル）を A*・IDA*・WD+A*・WD+IDA*・PDB-row・PDB-diag・PDB-max の 7 アルゴリズムで逐次解法し、探索過程と解答手順をアニメーションで比較できる静的 Web アプリ。
 
 **主な特徴：**
-- 2 パネルが独立したドロップダウンで 5 アルゴリズムを自由に切り替えて比較できる
+- 2 パネルが独立したドロップダウンで 7 アルゴリズムを自由に切り替えて比較できる
 - Explore Replay（探索順）と Solution Replay（解答手順）の 2 モードを切り替え可能
 - Manhattan距離・Walking Distance・PDB のリアルタイム進捗バー（3 行）を表示
-- 5 アルゴリズム比較カードリストに★（最優秀）・カラーコーディングを表示
+- 7 アルゴリズム比較カードリストに★（最優秀）・カラーコーディングを表示
 - アルゴリズムを 1 本ずつ `POST /solve_one` で逐次呼び出し、完了した行からリアルタイムに結果を反映
 - 実行中アルゴリズムのセルにインラインスピナー表示
 - シークスライダーで任意フレームへジャンプできる
 - Walking Distance テーブルを JS 側でも起動時に事前構築し、ヒューリスティック値をリアルタイム表示
 - コールドスタート対策のウォームアップ処理を内蔵
+- 3 種の PDB 系（PDB-row / PDB-diag / PDB-max）を並べることで、max の保険効果を視覚で比較できる
 
 ---
 
@@ -56,7 +57,7 @@ puzzle-visualizer/
 │           header（タイトル・サブタイトル・API docs リンク）              │
 ├─────────────────────┬────────────────────────┬────────────────────────┤
 │                     │  パネル 0               │  パネル 1               │
-│  コントロール        │  ドロップダウン(A*)      │  ドロップダウン(PDB+IDA*)│
+│  コントロール        │  ドロップダウン(A*)      │  ドロップダウン(PDB-max) │
 │  サイドバー         │  ┌──────────────────┐   │  ┌──────────────────┐   │
 │  （aside）          │  │  グリッド 224×224  │   │  │  グリッド 224×224  │   │
 │  ・Shuffle/Solve/   │  │  (loading overlay)│   │  │  (loading overlay)│   │
@@ -66,6 +67,7 @@ puzzle-visualizer/
 │  ・シークスライダー  │  h-compare バー(3行)    │  h-compare バー(3行)    │
 │  ・再生コントロール  │  ステータスバー          │  ステータスバー          │
 │  ・比較カードリスト  │                         │                         │
+│    (7行)            │                         │                         │
 │  ・API note         │                         │                         │
 └─────────────────────┴────────────────────────┴────────────────────────┘
 ```
@@ -99,7 +101,9 @@ puzzle-visualizer/
   ├─ GET /warmup（失敗しても続行）                                         │
   │      └─ Render コールドスタート対策                                     │
   │                                                                       │
-  ├─ for algo of ALGO_KEYS（'astar'→'idastar'→'wdastar'→'wdidastar'→'pdbidastar'）
+  ├─ for algo of ALGO_KEYS                                                │
+  │      （'astar'→'idastar'→'wdastar'→'wdidastar'                       │
+  │        →'pdbidastar'→'diagidastar'→'maxidastar'）                    │
   │      │                                                                │
   │      ├─ algoStates[algo] = 'running'                                  │
   │      ├─ updateComparisonTable()（該当行にスピナー）                    │
@@ -157,10 +161,10 @@ puzzle-visualizer/
 | `CELL` | `56` | セルサイズ（px） |
 | `GAP` | `3` | タイルのセル内オフセット（px） |
 | `GOAL` | `[1,2,...,15,0]` | ゴール盤面 |
-| `ALGO_KEYS` | `['astar','idastar','wdastar','wdidastar','pdbidastar']` | アルゴリズム識別キー（実行順） |
-| `ALGO_LABELS` | `{astar:'A*', ...}` | アルゴリズム表示名マップ |
-| `ALGO_DESC` | `{astar:'Best-first search', ...}` | パネルヘッダー用の説明文マップ |
-| `ALGO_BADGE` | `{astar:'b-a', ...}` | バッジ CSS クラスマップ |
+| `ALGO_KEYS` | `['astar','idastar','wdastar','wdidastar','pdbidastar','diagidastar','maxidastar']` | アルゴリズム識別キー（実行順） |
+| `ALGO_LABELS` | `{astar:'A*', ..., pdbidastar:'PDB-row', diagidastar:'PDB-diag', maxidastar:'PDB-max'}` | アルゴリズム表示名マップ |
+| `ALGO_DESC` | `{astar:'Best-first search', ..., diagidastar:'Diagonal PDB, IDA*', maxidastar:'max(row,diag) PDB, IDA*'}` | パネルヘッダー用の説明文マップ |
+| `ALGO_BADGE` | `{astar:'b-a', ..., pdbidastar:'b-pdb', diagidastar:'b-pdb-diag', maxidastar:'b-pdb-max'}` | バッジ CSS クラスマップ |
 | `SPEED_MS` | `[1800,1200,800,550,400,280,180,110,60,30]` | 速度スライダー値 1〜10 に対応する ms |
 
 ### 6-2. グローバル状態
@@ -173,7 +177,7 @@ puzzle-visualizer/
 | `timer` | `number\|null` | `setTimeout` のタイマー ID |
 | `speed` | `number` | 1 ステップあたりのミリ秒 |
 | `replayMode` | `'explore'\|'solution'` | 再生モード |
-| `panelAlgos` | `string[]` | `panelAlgos[p]` = パネル p が現在表示しているアルゴリズムキー。デフォルト `['astar','pdbidastar']` |
+| `panelAlgos` | `string[]` | `panelAlgos[p]` = パネル p が現在表示しているアルゴリズムキー。デフォルト `['astar','maxidastar']` |
 | `results` | `object` | アルゴリズムキー → 結果オブジェクトのマップ |
 | `algoStates` | `object` | アルゴリズムキー → `'waiting'\|'running'\|'done'\|'failed'` |
 | `initMH` | `number` | Shuffle 時の初期 Manhattan 距離（プログレスバー基準） |
@@ -235,7 +239,7 @@ solver.py の `_build_wd_table` / `_row_config` / `_col_config` を JS で完全
 | `setPanelResult(p)` | パネル p の統計（states/moves/time）と status を results から更新 |
 | `setPanelStatus(p, msg, type)` | ステータスバーのテキストと CSS クラスを設定 |
 | `updatePanelHeader(p)` | ドロップダウン選択に合わせてバッジ・説明文を更新 |
-| `updateComparisonTable()` | 5 アルゴリズムの比較カードリストを results と algoStates から更新。`allDone` 時のみ★・カラーを確定 |
+| `updateComparisonTable()` | 7 アルゴリズムの比較カードリストを results と algoStates から更新。`allDone` 時のみ★・カラーを確定 |
 | `updatePanelLoading()` | `algoStates[panelAlgos[p]] === 'running'` のパネルだけローディングオーバーレイを表示 |
 | `syncProgress()` | シークスライダーの max・value・disabled を更新 |
 | `showLoading(visible)` | 両パネルのローディングオーバーレイを一括表示/非表示 |
@@ -252,7 +256,7 @@ solver.py の `_build_wd_table` / `_row_config` / `_col_config` を JS で完全
 | `switchPanelAlgo(p, key)` | パネル p のアルゴリズムを切り替え、ヘッダー・統計・描画を更新 |
 | `applySpeed(val)` | スライダー値（1〜10）を `SPEED_MS` テーブルで ms に変換し `speed` に設定 |
 | `doShuffle()` | 盤面をシャッフルして initMH・initWD・initPDB・results・algoStates をリセット |
-| `doSolve()` | ウォームアップ → 5 本逐次 `/solve_one` 呼び出し → 結果をリアルタイムにパネルへ反映 |
+| `doSolve()` | ウォームアップ → 7 本逐次 `/solve_one` 呼び出し → 結果をリアルタイムにパネルへ反映 |
 | `doReset()` | ゴール盤面に戻す |
 
 ---
@@ -263,12 +267,13 @@ solver.py の `_build_wd_table` / `_row_config` / `_col_config` を JS で完全
 doSolve() 呼び出し
       │
       ├─ setBusy(true)
-      ├─ algoStates = { astar:'waiting', ..., pdbidastar:'waiting' }
+      ├─ algoStates = { astar:'waiting', ..., maxidastar:'waiting' }
       ├─ updateComparisonTable()（全行 "—"）
       │
       ├─ GET /warmup（失敗しても continue）
       │
-      ├─ for algo of ['astar','idastar','wdastar','wdidastar','pdbidastar']
+      ├─ for algo of ['astar','idastar','wdastar','wdidastar',
+      │               'pdbidastar','diagidastar','maxidastar']
       │      │
       │      ├─ aborted なら { error:'Skipped' } で skip
       │      │
@@ -325,17 +330,19 @@ doSolve() 呼び出し
 
 ## 9. 比較カードリスト
 
-`updateComparisonTable()` が全 5 アルゴリズムの結果を描画する。
+`updateComparisonTable()` が全 7 アルゴリズムの結果を描画する。
 
-**レイアウト構造（横持ちテーブルから縦持ちカードリストに変更）：**
+**レイアウト構造（縦持ちカードリスト）：**
 
 ```
-ALGORITHM   STS   STATES    TIME
-[A*]         ✓    40,489    7.47s   ▶
-[IDA*]       ✓    61,941    9.68s   ▶
-[WD+A*]      ✓    27,785    7.90s   ▶
-[WD+IDA*]    ✓    41,621    9.88s   ▶
-[PDB+IDA*]   ✓   10,687★   3.50s   ▶
+ALGORITHM    STS   STATES    TIME
+[A*]          ✓    40,489    7.47s   ▶
+[IDA*]        ✓    61,941    9.68s   ▶
+[WD+A*]       ✓    27,785    7.90s   ▶
+[WD+IDA*]     ✓    41,621    9.88s   ▶
+[PDB-row]     ✓   119,680   12.31s   ▶
+[PDB-diag]    ✓    63,773    6.61s   ▶
+[PDB-max]     ✓    49,473★   6.24s   ▶
 ```
 
 | 項目 | ロジック |
@@ -391,7 +398,9 @@ Dark Glass パレットをベースにした暗色テーマ。
 | `--idastar-color` | `#34d399` | IDA* バッジ色（エメラルド） |
 | `--wda-color` | `#fb923c` | WD+A* バッジ色（オレンジ） |
 | `--wida-color` | `#c084fc` | WD+IDA* バッジ色（パープル） |
-| `--pdb-color` | `#2dd4bf` | PDB+IDA* バッジ色（ティール） |
+| `--pdb-color` | `#2dd4bf` | PDB-row バッジ色（ティール） |
+| `--pdb-diag-color` | `#22d3ee` | PDB-diag バッジ色（シアン） |
+| `--pdb-max-color` | `#7dd3fc` | PDB-max バッジ色（ライトスカイ） |
 | `--correct` | `#1d4ed8` | 正位置タイルの背景 |
 | `--success` | `#10b981` | Solve ボタン / Solved! ステータス |
 | `--cell` | `56px` | グリッドのセルサイズ（4×56 = 224px） |
@@ -406,7 +415,11 @@ Dark Glass パレットをベースにした暗色テーマ。
 | `.b-ida` | IDA* | エメラルド（`--idastar-color`） |
 | `.b-wda` | WD+A* | オレンジ（`--wda-color`） |
 | `.b-wida` | WD+IDA* | パープル（`--wida-color`） |
-| `.b-pdb` | PDB+IDA* | ティール（`--pdb-color`） |
+| `.b-pdb` | PDB-row | ティール（`--pdb-color`） |
+| `.b-pdb-diag` | PDB-diag | シアン（`--pdb-diag-color`） |
+| `.b-pdb-max` | PDB-max | ライトスカイ（`--pdb-max-color`） |
+
+PDB 系 3 種はティール → シアン → ライトスカイの濃淡で識別できる。
 
 ### 11-3. タイルアニメーション
 
@@ -429,6 +442,7 @@ PDB:32 ████████████░░░░░░░░░░░░ 
 - `initPDB` は Solve 後に最初の `/solve_one` レスポンスの `h_pdb` から取得する
 - PDB バーは **Explore Replay のみ**有効。`exploredHPdb[step]` を参照する（Solution Replay では "PDB:—"）
 - IDA* 系は h_pdb が一時的に初期値を超えることがある（バックトラック）→ width を `[0, 100%]` にクランプ
+- `explored_h_pdb` の物差しは **pdb-01（行優先）** に統一。diagidastar / maxidastar 実行中でも同じ尺度で比較できる
 
 ### 11-5. 比較カードリスト（.cmp-row）
 
@@ -466,6 +480,7 @@ PDB:32 ████████████░░░░░░░░░░░░ 
 | 1.0.0 | 2026-05-31 | 初版。A*・IDA* の 2 アルゴリズム、固定パネル |
 | 2.0.0 | 2026-06-01 | WD+A*・WD+IDA* を追加。パネルをドロップダウンで切り替え可能に。h-compare バー（MH/WD 2行）・比較テーブルの★カラーコーディングを追加。Walking Distance を JS 側でも事前構築 |
 | 3.0.0 | 2026-06-02 | PDB+IDA* を 5 本目として追加。`/compare` 一括呼び出しから `/solve_one` 逐次呼び出しに変更（algoStates ステートマシン・スピナー・逐次フィードバック）。比較表を横持ちテーブルから縦持ちカードリストに刷新。h-compare バーに PDB バー（3行目）を追加。PDB バーは Explore Replay で `exploredHPdb[step]` を参照 |
+| 4.0.0 | 2026-06-03 | PDB-diag / PDB-max を追加し 7 アルゴリズム構成に拡張。比較カードリスト 5行→7行。ドロップダウン 5択→7択。pdbidastar の表示名を "PDB+IDA*" → "PDB-row" に変更。`--pdb-diag-color` / `--pdb-max-color` CSS 変数・`.b-pdb-diag` / `.b-pdb-max` バッジクラスを追加。Panel 1 のデフォルトを `maxidastar`（PDB-max）に変更 |
 
 ---
 
