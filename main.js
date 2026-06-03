@@ -50,7 +50,7 @@ let speed      = 400;
 let replayMode = 'explore';
 
 // panelAlgos[i] = which algo key panel i is currently showing
-let panelAlgos = ['astar', 'pdbidastar'];
+let panelAlgos = ['astar', 'maxidastar'];
 
 // results keyed by algo key; undefined = not yet solved
 let results = {};
