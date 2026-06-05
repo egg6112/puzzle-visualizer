@@ -12,112 +12,164 @@
 <header>
   <h1>PDB-max vs L字 — 最適 vs 人間流</h1>
   <p class="subtitle">
-    最適探索（数秒）vs 段階的解法（数十ms）&middot; 手数 vs スピード の対比
-    &middot; <a href="index.html">← メインに戻る</a>
+    最適探索（数秒）vs 段階的解法（数十ms）&middot; 手数 vs スピード
+    &middot; <a href="index.html">← Algorithm Comparator</a>
   </p>
 </header>
 
-<!-- ── Control bar ────────────────────────────────────────────────────────── -->
-<div class="duel-bar">
-  <div class="duel-bar-row">
+<div class="body-layout">
+
+  <!-- ── Left sidebar (same structure as index.html) ──────────────────────── -->
+  <aside class="controls" aria-label="Control panel">
+
     <div class="btn-row">
       <button id="btn-shuffle" class="btn secondary-btn">Shuffle</button>
       <button id="btn-solve"   class="btn accent-btn">Solve</button>
-      <button id="btn-play"    class="btn primary-btn">&#9654; Play</button>
+      <button id="btn-reset"   class="btn secondary-btn">Reset</button>
     </div>
+
+    <div class="max-time-row">
+      <label for="max-time-input" class="max-time-label">Max time</label>
+      <input id="max-time-input" type="number" min="1" max="300" value="30" step="1">
+      <span>s / PDB</span>
+    </div>
+
+    <div class="controls-divider"></div>
+
+    <!-- Solution Replay only (no Explore mode in duel) -->
+    <div class="btn-row">
+      <button id="btn-mode-solution" class="btn mode-btn active-mode">Solution Replay</button>
+    </div>
+
+    <!-- Seek slider with phase markers for L字 -->
+    <div class="seek-wrap">
+      <input id="seek-slider" type="range" min="0" max="0" value="0" disabled>
+      <div id="phase-markers" aria-hidden="true"></div>
+    </div>
+
+    <div class="btn-row">
+      <button id="btn-prev" class="btn icon-btn" aria-label="Step back">&#9664;&#9664;</button>
+      <button id="btn-play" class="btn primary-btn">&#9654; Play</button>
+      <button id="btn-next" class="btn icon-btn" aria-label="Step forward">&#9654;&#9654;</button>
+    </div>
+
     <div class="speed-row">
       <span class="speed-label-text">Speed</span>
       <input id="speed-slider" type="range" min="1" max="10" value="5">
       <span id="speed-display" class="speed-val">2.5&times;</span>
     </div>
-  </div>
-  <div class="duel-seek-row">
-    <div class="seek-wrap">
-      <input id="seek-slider" type="range" min="0" max="0" value="0" disabled>
-      <div id="phase-markers" aria-hidden="true"></div>
+
+    <div id="global-error" class="global-error hidden" role="alert">
+      <span id="global-error-msg"></span>
+      <button id="global-error-close" class="global-error-close" aria-label="Dismiss">&#215;</button>
     </div>
-  </div>
-  <div id="global-error" class="global-error hidden" role="alert">
-    <span id="global-error-msg"></span>
-    <button id="global-error-close" class="global-error-close" aria-label="Dismiss">&#215;</button>
-  </div>
-</div>
 
-<!-- ── Dual panels ────────────────────────────────────────────────────────── -->
-<div class="duel-panels">
+    <div class="controls-divider"></div>
 
-  <!-- Left: PDB-max -->
-  <section class="panel duel-panel" id="panel-pdb" aria-label="PDB-max">
-    <div class="panel-header">
-      <div class="panel-header-left">
+    <!-- Legend -->
+    <div class="duel-legend">
+      <div class="duel-legend-row">
         <span class="algo-badge b-pdb-max">PDB-max</span>
-        <span class="algo-desc">max(row,diag) PDB &middot; IDA* &middot; 最適解</span>
+        <span class="duel-legend-desc">最適解・数秒・少ない手数</span>
       </div>
-      <span class="duel-label-contrast">🔍 遅いが最短</span>
-    </div>
-
-    <div class="grid" id="grid-pdb">
-      <div id="loading-pdb" class="loading-overlay hidden" aria-live="polite">
-        <div class="spinner" aria-hidden="true"></div>
-        <span>Solving&hellip;</span>
-      </div>
-    </div>
-
-    <div class="panel-stats">
-      <div class="stat">
-        <div class="stat-name">Time</div>
-        <div class="stat-val orange" id="pdb-time">—</div>
-      </div>
-      <div class="stat">
-        <div class="stat-name">Optimal Moves</div>
-        <div class="stat-val" id="pdb-moves">—</div>
-      </div>
-      <div class="stat stat-wide">
-        <div class="stat-name">States Explored</div>
-        <div class="stat-val" id="pdb-states">—</div>
-      </div>
-    </div>
-
-    <div class="panel-status waiting" id="pdb-status">Waiting</div>
-  </section>
-
-  <!-- Right: L字 -->
-  <section class="panel duel-panel" id="panel-staged" aria-label="L字段階解法">
-    <div class="panel-header">
-      <div class="panel-header-left">
+      <div class="duel-legend-row">
         <span class="algo-badge duel-badge-staged">L字</span>
-        <span class="algo-desc">段階的解法 &middot; ペアBFS &middot; 非最適・高速</span>
-      </div>
-      <span class="duel-label-contrast">⚡ 速いが遠回り</span>
-    </div>
-
-    <div class="grid" id="grid-staged">
-      <div id="loading-staged" class="loading-overlay hidden" aria-live="polite">
-        <div class="spinner" aria-hidden="true"></div>
-        <span>Solving&hellip;</span>
+        <span class="duel-legend-desc">段階的・数十ms・多い手数</span>
       </div>
     </div>
 
-    <div class="panel-stats">
-      <div class="stat">
-        <div class="stat-name">Time</div>
-        <div class="stat-val green" id="staged-time">—</div>
-      </div>
-      <div class="stat">
-        <div class="stat-name">Total Moves</div>
-        <div class="stat-val" id="staged-moves">—</div>
-      </div>
-    </div>
+  </aside>
 
-    <div class="duel-phase-box" id="phase-box">
-      <span class="duel-phase-label">Phase</span>
-      <span class="duel-phase-name" id="phase-name">—</span>
-    </div>
+  <!-- ── Right: dual panels ─────────────────────────────────────────────────── -->
+  <div class="right-col">
+    <div class="panels-wrap">
 
-    <div class="panel-status waiting" id="staged-status">Waiting</div>
-  </section>
+      <!-- PDB-max panel -->
+      <section class="panel" id="panel-pdb" aria-label="PDB-max">
+        <div class="panel-header">
+          <div class="panel-header-left">
+            <span class="algo-badge b-pdb-max">PDB-max</span>
+            <span class="algo-desc">max(row,diag) PDB &middot; IDA* &middot; 最適解</span>
+          </div>
+          <span class="duel-label-contrast">🔍 遅い・最短</span>
+        </div>
 
-</div>
+        <div class="grid" id="grid-pdb">
+          <div id="loading-pdb" class="loading-overlay hidden" aria-live="polite">
+            <div class="spinner" aria-hidden="true"></div>
+            <span>Solving&hellip;</span>
+          </div>
+        </div>
+
+        <div class="panel-stats">
+          <div class="stat"><div class="stat-name">h (Manhattan)</div><div class="stat-val" id="pdb-hmh">0</div></div>
+          <div class="stat"><div class="stat-name">h (Walking Dist)</div><div class="stat-val" id="pdb-hwd">0</div></div>
+          <div class="stat"><div class="stat-name">Time</div><div class="stat-val" id="pdb-time">—</div></div>
+          <div class="stat"><div class="stat-name">Optimal Moves</div><div class="stat-val" id="pdb-moves">—</div></div>
+          <div class="stat stat-wide"><div class="stat-name">States Explored</div><div class="stat-val" id="pdb-states">—</div></div>
+        </div>
+
+        <div class="h-compare" id="pdb-hcompare">
+          <div class="h-row">
+            <span class="h-label mh-label" id="pdb-mhlabel">MH:0</span>
+            <div class="h-bar-track"><div class="h-bar h-bar-mh" id="pdb-mhbar" style="width:0%"></div></div>
+          </div>
+          <div class="h-row">
+            <span class="h-label wd-label" id="pdb-wdlabel">WD:0</span>
+            <div class="h-bar-track"><div class="h-bar h-bar-wd" id="pdb-wdbar" style="width:0%"></div></div>
+          </div>
+        </div>
+
+        <div class="panel-status waiting" id="pdb-status">Waiting</div>
+      </section>
+
+      <!-- L字 panel -->
+      <section class="panel" id="panel-staged" aria-label="L字段階解法">
+        <div class="panel-header">
+          <div class="panel-header-left">
+            <span class="algo-badge duel-badge-staged">L字</span>
+            <span class="algo-desc">段階的解法 &middot; ペアBFS &middot; 非最適・高速</span>
+          </div>
+          <span class="duel-label-contrast">⚡ 速い・遠回り</span>
+        </div>
+
+        <div class="grid" id="grid-staged">
+          <div id="loading-staged" class="loading-overlay hidden" aria-live="polite">
+            <div class="spinner" aria-hidden="true"></div>
+            <span>Solving&hellip;</span>
+          </div>
+        </div>
+
+        <div class="panel-stats">
+          <div class="stat"><div class="stat-name">h (Manhattan)</div><div class="stat-val" id="staged-hmh">0</div></div>
+          <div class="stat"><div class="stat-name">h (Walking Dist)</div><div class="stat-val" id="staged-hwd">0</div></div>
+          <div class="stat"><div class="stat-name">Time</div><div class="stat-val green" id="staged-time">—</div></div>
+          <div class="stat"><div class="stat-name">Total Moves</div><div class="stat-val" id="staged-moves">—</div></div>
+        </div>
+
+        <div class="h-compare" id="staged-hcompare">
+          <div class="h-row">
+            <span class="h-label mh-label" id="staged-mhlabel">MH:0</span>
+            <div class="h-bar-track"><div class="h-bar h-bar-mh" id="staged-mhbar" style="width:0%"></div></div>
+          </div>
+          <div class="h-row">
+            <span class="h-label wd-label" id="staged-wdlabel">WD:0</span>
+            <div class="h-bar-track"><div class="h-bar h-bar-wd" id="staged-wdbar" style="width:0%"></div></div>
+          </div>
+        </div>
+
+        <div class="duel-phase-box" id="phase-box">
+          <span class="duel-phase-label">Phase</span>
+          <span class="duel-phase-name" id="phase-name">—</span>
+        </div>
+
+        <div class="panel-status waiting" id="staged-status">Waiting</div>
+      </section>
+
+    </div><!-- panels-wrap -->
+  </div><!-- right-col -->
+
+</div><!-- body-layout -->
 
 <script src="duel.js"></script>
 </body>

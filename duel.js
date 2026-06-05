@@ -1,28 +1,103 @@
 // duel.js — PDB-max vs L字 同時 Solution Replay
-// Copied and adapted from main.js (main.js は変更しない)
+// Puzzle helpers / WD table copied from main.js (main.js は変更しない)
 
-const API_BASE  = "https://puzzle-api-m99y.onrender.com";
+const API_BASE   = "https://puzzle-api-m99y.onrender.com";
 const SIZE = 4, CELL = 56, GAP = 3;
-const GOAL      = [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,0];
+const GOAL       = [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,0];
 const MOVE_DELTA = { up:[-1,0], down:[1,0], left:[0,-1], right:[0,1] };
-const SPEED_MS  = [1800,1200,800,550,400,280,180,110,60,30];
+const SPEED_MS   = [1800,1200,800,550,400,280,180,110,60,30];
 
 // ── State ─────────────────────────────────────────────────────────────────────
 let board        = GOAL.slice();
-let pdbPath      = null;   // board states for PDB-max (length = optimal_moves+1)
-let stagedPath   = null;   // board states for L字 (length = total_moves+1)
+let pdbPath      = null;   // board states for PDB-max (length = optimal_moves + 1)
+let stagedPath   = null;   // board states for L字    (length = total_moves   + 1)
 let pdbResult    = null;
 let stagedResult = null;
 let stagedPhases = [];     // phases from /solve_staged
 
 let step = 0, playing = false, timer = null, speed = 400;
+let initMH = 0, initWD = 0;
 
 // tileEls[0] = PDB-max, tileEls[1] = L字
-const tileEls = [{}, {}];
+const tileEls     = [{}, {}];
 const GRID_IDS    = ['grid-pdb',    'grid-staged'];
 const LOADING_IDS = ['loading-pdb', 'loading-staged'];
+const PANEL_KEYS  = ['pdb',          'staged'];
 
 // ── Puzzle helpers (copied from main.js) ─────────────────────────────────────
+
+function manhattan(st) {
+  let d = 0;
+  for (let i = 0; i < 16; i++) {
+    if (!st[i]) continue;
+    const v = st[i] - 1;
+    d += Math.abs((i >> 2) - (v >> 2)) + Math.abs((i & 3) - (v & 3));
+  }
+  return d;
+}
+
+// ── Walking Distance (copied from main.js) ────────────────────────────────────
+
+function buildWdTable() {
+  const goal = new Array(SIZE * SIZE).fill(0);
+  for (let i = 0; i < SIZE; i++) {
+    goal[i * SIZE + i] = i < SIZE - 1 ? SIZE : SIZE - 1;
+  }
+  const goalKey = goal.join(',') + ',' + (SIZE - 1);
+  const table   = new Map([[goalKey, 0]]);
+  const queue   = [{ T: goal, br: SIZE - 1, dist: 0 }];
+  let head = 0;
+  while (head < queue.length) {
+    const { T, br, dist } = queue[head++];
+    for (const delta of [-1, 1]) {
+      const nbr = br + delta;
+      if (nbr < 0 || nbr >= SIZE) continue;
+      for (let g = 0; g < SIZE; g++) {
+        if (T[nbr * SIZE + g] > 0) {
+          const nT = T.slice();
+          nT[nbr * SIZE + g]--;
+          nT[br  * SIZE + g]++;
+          const nKey = nT.join(',') + ',' + nbr;
+          if (!table.has(nKey)) {
+            table.set(nKey, dist + 1);
+            queue.push({ T: nT, br: nbr, dist: dist + 1 });
+          }
+        }
+      }
+    }
+  }
+  return table;
+}
+const _WD_TABLE = buildWdTable();
+
+function rowConfig(state) {
+  const T = new Array(SIZE * SIZE).fill(0);
+  let blankRow = 0;
+  for (let i = 0; i < 16; i++) {
+    const val = state[i];
+    if (val === 0) { blankRow = i >> 2; }
+    else { T[(i >> 2) * SIZE + ((val - 1) >> 2)]++; }
+  }
+  return T.join(',') + ',' + blankRow;
+}
+
+function colConfig(state) {
+  const T = new Array(SIZE * SIZE).fill(0);
+  let blankCol = 0;
+  for (let i = 0; i < 16; i++) {
+    const val = state[i];
+    if (val === 0) { blankCol = i & 3; }
+    else { T[(i & 3) * SIZE + ((val - 1) & 3)]++; }
+  }
+  return T.join(',') + ',' + blankCol;
+}
+
+function walkingDistance(state) {
+  return (_WD_TABLE.get(rowConfig(state)) ?? 0)
+       + (_WD_TABLE.get(colConfig(state)) ?? 0);
+}
+
+// ── Board helpers ─────────────────────────────────────────────────────────────
 
 function getNeighbors(st) {
   const z = st.indexOf(0), r = z >> 2, c = z & 3, ns = [];
@@ -59,7 +134,7 @@ function buildPath(initial, moves) {
   return path;
 }
 
-// ── Grid init (copied from main.js) ──────────────────────────────────────────
+// ── Grid init ─────────────────────────────────────────────────────────────────
 
 function initGrids() {
   for (let p = 0; p < 2; p++) {
@@ -77,7 +152,7 @@ function initGrids() {
   }
 }
 
-// ── Rendering (copied from main.js) ──────────────────────────────────────────
+// ── Rendering ─────────────────────────────────────────────────────────────────
 
 function placePanel(p, st) {
   const tiles = tileEls[p];
@@ -109,29 +184,41 @@ function getStateAt(p, s) {
   return path[Math.min(s, path.length - 1)];
 }
 
+// ── h-bar update (adapted from main.js updateHBar) ────────────────────────────
+
+function updateHBar(p, st) {
+  const k   = PANEL_KEYS[p];
+  const mh  = manhattan(st);
+  const wd  = walkingDistance(st);
+  const mhPct = initMH > 0 ? Math.max(0, Math.min(100, Math.round((1 - mh/initMH)*100))) : 0;
+  const wdPct = initWD > 0 ? Math.max(0, Math.min(100, Math.round((1 - wd/initWD)*100))) : 0;
+
+  document.getElementById(k+'-hmh').textContent     = mh;
+  document.getElementById(k+'-hwd').textContent     = wd;
+  document.getElementById(k+'-mhlabel').textContent = 'MH:' + mh;
+  document.getElementById(k+'-wdlabel').textContent = 'WD:' + wd;
+  document.getElementById(k+'-mhbar').style.width   = mhPct + '%';
+  document.getElementById(k+'-wdbar').style.width   = wdPct + '%';
+}
+
 // ── Phase display ─────────────────────────────────────────────────────────────
 
 function updatePhaseDisplay() {
   const nameEl = document.getElementById('phase-name');
   if (!stagedPhases.length || !stagedResult) { nameEl.textContent = '—'; return; }
+  if (step >= stagedResult.total_moves)      { nameEl.textContent = '完了！'; return; }
 
-  if (step >= stagedResult.total_moves) {
-    nameEl.textContent = '完了！';
-    return;
-  }
-  // step = n means n moves have been applied; last applied move = moves[n-1]
+  // step = n: moves[0..n-1] applied; last applied move = moves[n-1]
   const moveIdx = Math.max(0, step - 1);
-  const phase = stagedPhases.find(p => moveIdx >= p.move_range[0] && moveIdx < p.move_range[1]);
+  const phase   = stagedPhases.find(ph => moveIdx >= ph.move_range[0] && moveIdx < ph.move_range[1]);
   nameEl.textContent = phase ? phase.name : stagedPhases[0].name;
 }
 
 // ── Solved check ─────────────────────────────────────────────────────────────
 
 function checkSolvedBothPanels() {
-  if (pdbPath && step >= pdbPath.length - 1)
-    setStatus('pdb', 'Solved! ✓', 'solved');
-  if (stagedPath && step >= stagedPath.length - 1)
-    setStatus('staged', 'Solved! ✓', 'solved');
+  if (pdbPath    && step >= pdbPath.length    - 1) setStatus('pdb',    'Solved! ✓', 'solved');
+  if (stagedPath && step >= stagedPath.length - 1) setStatus('staged', 'Solved! ✓', 'solved');
 }
 
 // ── Render all ───────────────────────────────────────────────────────────────
@@ -142,6 +229,7 @@ function renderAll(prevStep = null) {
     const prevSt = prevStep !== null ? getStateAt(p, prevStep) : null;
     if (prevSt && prevSt !== st) flashPanel(p, prevSt, st);
     placePanel(p, st);
+    updateHBar(p, st);
   }
   updatePhaseDisplay();
   syncProgress();
@@ -158,10 +246,7 @@ function maxPathLen() {
 function syncProgress() {
   const slider = document.getElementById('seek-slider');
   const maxLen = maxPathLen();
-  if (maxLen <= 1) {
-    slider.max = 0; slider.value = 0; slider.disabled = true;
-    return;
-  }
+  if (maxLen <= 1) { slider.max = 0; slider.value = 0; slider.disabled = true; return; }
   slider.max      = maxLen - 1;
   slider.value    = step;
   slider.disabled = false;
@@ -171,19 +256,17 @@ function updatePhaseMarkers() {
   const container = document.getElementById('phase-markers');
   container.innerHTML = '';
   if (!stagedPhases.length || !stagedResult) return;
-
   const maxLen = maxPathLen() - 1;
   if (maxLen <= 0) return;
-
-  stagedPhases.forEach((phase, i) => {
-    if (i === 0) return; // no marker at position 0
-    const pct = (phase.move_range[0] / maxLen) * 100;
+  stagedPhases.forEach((ph, i) => {
+    if (i === 0) return;
+    const pct = (ph.move_range[0] / maxLen) * 100;
     if (pct <= 0 || pct >= 100) return;
-    const marker = document.createElement('div');
-    marker.className   = 'phase-marker';
-    marker.style.left  = pct + '%';
-    marker.title       = phase.name;
-    container.appendChild(marker);
+    const m = document.createElement('div');
+    m.className  = 'phase-marker';
+    m.style.left = pct + '%';
+    m.title      = ph.name;
+    container.appendChild(m);
   });
 }
 
@@ -241,13 +324,27 @@ function play() {
 function pause()      { stopTimer(); setPlaying(false); }
 function togglePlay() { if (maxPathLen() <= 1) return; playing ? pause() : play(); }
 
+function stepForward() {
+  if (maxPathLen() <= 1 || step >= maxPathLen() - 1) return;
+  pause();
+  const prev = step++;
+  renderAll(prev);
+  checkSolvedBothPanels();
+}
+
+function stepBack() {
+  if (maxPathLen() <= 1 || step <= 0) return;
+  pause();
+  const prev = step--;
+  renderAll(prev);
+}
+
 // ── Stats display ─────────────────────────────────────────────────────────────
 
 function displayPdbStats(data) {
   const timeEl   = document.getElementById('pdb-time');
   const movesEl  = document.getElementById('pdb-moves');
   const statesEl = document.getElementById('pdb-states');
-
   if (!data || data.error) {
     timeEl.textContent   = data ? (data.time_ms/1000).toFixed(2)+' s' : '—';
     movesEl.textContent  = '—';
@@ -263,13 +360,7 @@ function displayPdbStats(data) {
 function displayStagedStats(data) {
   const timeEl  = document.getElementById('staged-time');
   const movesEl = document.getElementById('staged-moves');
-
-  if (!data || !data.solvable) {
-    timeEl.textContent  = '—';
-    movesEl.textContent = '—';
-    return;
-  }
-  // L字 は通常ミリ秒単位
+  if (!data || !data.solvable) { timeEl.textContent = '—'; movesEl.textContent = '—'; return; }
   timeEl.textContent  = data.time_ms < 1000
     ? data.time_ms.toFixed(1) + ' ms'
     : (data.time_ms/1000).toFixed(3) + ' s';
@@ -277,82 +368,98 @@ function displayStagedStats(data) {
   movesEl.textContent = data.total_moves;
 }
 
-// ── Reset helper ─────────────────────────────────────────────────────────────
+// ── Reset helpers ─────────────────────────────────────────────────────────────
+
+function clearHBars() {
+  for (const k of PANEL_KEYS) {
+    document.getElementById(k+'-hmh').textContent     = '0';
+    document.getElementById(k+'-hwd').textContent     = '0';
+    document.getElementById(k+'-mhlabel').textContent = 'MH:0';
+    document.getElementById(k+'-wdlabel').textContent = 'WD:0';
+    document.getElementById(k+'-mhbar').style.width   = '0%';
+    document.getElementById(k+'-wdbar').style.width   = '0%';
+  }
+}
 
 function resetResults() {
   pdbPath = stagedPath = pdbResult = stagedResult = null;
   stagedPhases = [];
   step = 0;
-  setStatus('pdb', 'Waiting', 'waiting');
+  setStatus('pdb',    'Waiting', 'waiting');
   setStatus('staged', 'Waiting', 'waiting');
-  document.getElementById('pdb-time').textContent    = '—';
-  document.getElementById('pdb-moves').textContent   = '—';
-  document.getElementById('pdb-states').textContent  = '—';
+  document.getElementById('pdb-time').textContent     = '—';
+  document.getElementById('pdb-moves').textContent    = '—';
+  document.getElementById('pdb-states').textContent   = '—';
   document.getElementById('staged-time').textContent  = '—';
   document.getElementById('staged-moves').textContent = '—';
   document.getElementById('phase-name').textContent   = '—';
   document.getElementById('phase-markers').innerHTML  = '';
+  clearHBars();
 }
 
 // ── Actions ───────────────────────────────────────────────────────────────────
 
 function setBusy(busy) {
-  ['btn-shuffle', 'btn-solve', 'btn-play'].forEach(id => {
-    const el = document.getElementById(id);
-    if (el) el.disabled = busy;
-  });
+  ['btn-shuffle','btn-solve','btn-reset','btn-play','btn-prev','btn-next']
+    .forEach(id => { const el = document.getElementById(id); if (el) el.disabled = busy; });
 }
 
 function doShuffle() {
   pause(); clearError();
-  board = randomShuffle();
+  board  = randomShuffle();
+  initMH = manhattan(board);
+  initWD = walkingDistance(board);
+  resetResults();
+  renderAll();  // shows h values immediately after shuffle
+}
+
+function doReset() {
+  pause(); clearError();
+  board  = GOAL.slice();
+  initMH = 0;
+  initWD = 0;
   resetResults();
   renderAll();
 }
 
 async function doSolve() {
-  // Guard: don't solve the goal state
-  if (board.every((v, i) => v === GOAL[i])) {
-    doShuffle();
-    return;
-  }
+  if (board.every((v, i) => v === GOAL[i])) { doShuffle(); return; }
 
   pause(); clearError();
   setBusy(true);
   resetResults();
+  // Re-apply initMH/WD after resetResults clears bars
+  initMH = manhattan(board);
+  initWD = walkingDistance(board);
   setStatus('pdb',    'Solving…', 'waiting');
   setStatus('staged', 'Solving…', 'waiting');
 
-  // Warmup for Render cold-start
+  const _raw    = parseFloat(document.getElementById('max-time-input').value);
+  const maxTime = Math.min(300, Math.max(1, isNaN(_raw) ? 30 : _raw));
+
   try { await fetch(API_BASE + '/warmup'); } catch (_) {}
 
-  // ── 1. PDB-max (/solve_one, maxidastar) ────────────────────────────────────
+  // ── 1. PDB-max ────────────────────────────────────────────────────────────
   setLoading('pdb', true);
   try {
     const res = await fetch(API_BASE + '/solve_one', {
       method:  'POST',
       headers: { 'Content-Type': 'application/json' },
-      body:    JSON.stringify({ board, algo: 'maxidastar', max_time: 30 }),
+      body:    JSON.stringify({ board, algo: 'maxidastar', max_time: maxTime }),
     });
-
     if (!res.ok) {
       const body = await res.json().catch(() => ({}));
       const msg  = body.detail ?? `HTTP ${res.status}`;
       if (res.status === 400) {
         showError('Board is unsolvable: ' + msg);
-        setBusy(false); setLoading('pdb', false);
         setStatus('pdb', 'Error', 'error'); setStatus('staged', 'Error', 'error');
-        return;
+        setBusy(false); setLoading('pdb', false); return;
       }
       pdbResult = { error: msg, time_ms: 0, states_explored: 0 };
     } else {
       const data = await res.json();
-      if (data.error) {
-        pdbResult = data;
-      } else {
-        pdbResult = data;
-        pdbPath   = buildPath(board, data.moves);
-      }
+      pdbResult  = data;
+      if (!data.error) pdbPath = buildPath(board, data.moves);
     }
   } catch (err) {
     const msg = err instanceof TypeError
@@ -363,15 +470,13 @@ async function doSolve() {
   }
   setLoading('pdb', false);
   displayPdbStats(pdbResult);
-  if (pdbResult?.error) {
-    const isTimeout = pdbResult.error.startsWith('Timeout');
-    setStatus('pdb', isTimeout ? '⏱ Timeout' : '❌ Error',
-              isTimeout ? 'error-timeout' : 'error');
-  } else {
-    setStatus('pdb', 'Ready', 'waiting');
-  }
+  setStatus('pdb', pdbResult?.error
+    ? (pdbResult.error.startsWith('Timeout') ? '⏱ Timeout' : '❌ Error')
+    : 'Ready', pdbResult?.error
+    ? (pdbResult.error.startsWith('Timeout') ? 'error-timeout' : 'error')
+    : 'waiting');
 
-  // ── 2. L字 (/solve_staged) ─────────────────────────────────────────────────
+  // ── 2. L字 ───────────────────────────────────────────────────────────────
   setLoading('staged', true);
   try {
     const res = await fetch(API_BASE + '/solve_staged', {
@@ -379,42 +484,31 @@ async function doSolve() {
       headers: { 'Content-Type': 'application/json' },
       body:    JSON.stringify({ board }),
     });
-
     if (!res.ok) {
       const body = await res.json().catch(() => ({}));
-      const msg  = body.detail ?? `HTTP ${res.status}`;
-      stagedResult = { solvable: false, error: msg };
+      stagedResult = { solvable: false, error: body.detail ?? `HTTP ${res.status}` };
     } else {
       const data = await res.json();
-      if (!data.solvable) {
-        stagedResult = { solvable: false };
-      } else {
-        stagedResult = data;
+      stagedResult = data;
+      if (data.solvable) {
         stagedPhases = data.phases ?? [];
         stagedPath   = buildPath(board, data.moves);
       }
     }
   } catch (err) {
-    const msg = err instanceof TypeError
-      ? `Cannot reach ${API_BASE}`
-      : (err.message || 'Network error');
-    showError(msg);
-    stagedResult = { solvable: false, error: msg };
+    showError(err instanceof TypeError ? `Cannot reach ${API_BASE}` : (err.message || 'Network error'));
+    stagedResult = { solvable: false };
   }
   setLoading('staged', false);
   displayStagedStats(stagedResult);
-  if (!stagedResult?.solvable) {
-    setStatus('staged', '❌ Error', 'error');
-  } else {
-    setStatus('staged', 'Ready', 'waiting');
-  }
+  setStatus('staged', stagedResult?.solvable ? 'Ready' : '❌ Error',
+                       stagedResult?.solvable ? 'waiting' : 'error');
 
-  // ── Finalize ───────────────────────────────────────────────────────────────
+  // ── Finalize ──────────────────────────────────────────────────────────────
   setBusy(false);
   step = 0;
   renderAll();
   updatePhaseMarkers();
-
   if (pdbPath || stagedPath) play();
 }
 
@@ -422,18 +516,19 @@ async function doSolve() {
 
 function applySpeed(val) {
   speed = SPEED_MS[val - 1];
-  document.getElementById('speed-display').textContent = (1000 / speed).toFixed(1) + '×';
+  document.getElementById('speed-display').textContent = (1000/speed).toFixed(1) + '×';
 }
 
 // ── Bootstrap ─────────────────────────────────────────────────────────────────
 
 document.getElementById('btn-shuffle').addEventListener('click', doShuffle);
 document.getElementById('btn-solve').addEventListener('click', doSolve);
+document.getElementById('btn-reset').addEventListener('click', doReset);
 document.getElementById('btn-play').addEventListener('click', togglePlay);
+document.getElementById('btn-prev').addEventListener('click', stepBack);
+document.getElementById('btn-next').addEventListener('click', stepForward);
 document.getElementById('global-error-close').addEventListener('click', clearError);
-
 document.getElementById('speed-slider').addEventListener('input', e => applySpeed(+e.target.value));
-
 document.getElementById('seek-slider').addEventListener('input', e => {
   const prev = step;
   step = +e.target.value;
