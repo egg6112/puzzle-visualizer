@@ -1,26 +1,34 @@
 # puzzle-visualizer 設計書
 
 作成日：2026-05-31  
-更新日：2026-06-03  
+更新日：2026-06-05  
 公開URL：`https://egg6112.github.io/puzzle-visualizer/`
 
 ---
 
 ## 1. 概要
 
-15パズル（4×4スライドパズル）を A*・IDA*・WD+A*・WD+IDA*・PDB-row・PDB-diag・PDB-max の 7 アルゴリズムで逐次解法し、探索過程と解答手順をアニメーションで比較できる静的 Web アプリ。
+15パズル（4×4スライドパズル）の可視化アプリ。2つのページで構成される。
 
-**主な特徴：**
-- 2 パネルが独立したドロップダウンで 7 アルゴリズムを自由に切り替えて比較できる
-- Explore Replay（探索順）と Solution Replay（解答手順）の 2 モードを切り替え可能
-- Manhattan距離・Walking Distance・PDB のリアルタイム進捗バー（3 行）を表示
-- 7 アルゴリズム比較カードリストに★（最優秀）・カラーコーディングを表示
-- アルゴリズムを 1 本ずつ `POST /solve_one` で逐次呼び出し、完了した行からリアルタイムに結果を反映
-- 実行中アルゴリズムのセルにインラインスピナー表示
-- シークスライダーで任意フレームへジャンプできる
-- Walking Distance テーブルを JS 側でも起動時に事前構築し、ヒューリスティック値をリアルタイム表示
-- コールドスタート対策のウォームアップ処理を内蔵
-- 3 種の PDB 系（PDB-row / PDB-diag / PDB-max）を並べることで、max の保険効果を視覚で比較できる
+| ページ | ファイル | 目的 |
+|---|---|---|
+| Algorithm Comparator | `index.html` | 7アルゴリズムを逐次解法して探索過程・解手順を比較 |
+| PDB-max vs L字 Duel | `duel.html` | 最適探索（PDB-max）と段階的解法（L字）を同時再生で対比 |
+
+**Algorithm Comparator の主な特徴：**
+- 2パネルが独立ドロップダウンで 7 アルゴリズムを切り替え比較
+- Explore Replay（探索順）と Solution Replay（解答手順）の 2 モード
+- MH・WD・PDB の 3 行 h-compare バーをリアルタイム更新
+- 7アルゴリズム比較カードリスト（★・カラーコーディング）
+- `/solve_one` 逐次呼び出しで完了した行からリアルタイム反映
+- シークスライダーによる任意フレームジャンプ
+
+**PDB-max vs L字 Duel の主な特徴：**
+- PDB-max と L字 を同じ盤面で同時に Solution Replay して手数・時間差を可視化
+- L字の現フェーズ名（「3,4 ペア回し込み」等）をリアルタイム表示
+- シークバー上に L字 フェーズ境界マーカーを表示
+- 両パネルに MH・WD の h-compare バー
+- index.html/main.js/style.css と完全独立（duel.css / duel.js に分離）
 
 ---
 
@@ -28,13 +36,19 @@
 
 ```
 puzzle-visualizer/
-├── index.html   # HTML 構造・セマンティクス
-├── main.js      # 状態管理・API通信・描画ロジック
-├── style.css    # デザイントークン・レイアウト・アニメーション
+├── index.html   # Algorithm Comparator — HTML 構造
+├── main.js      # Algorithm Comparator — 状態管理・API通信・描画
+├── style.css    # 共通デザイントークン・レイアウト・アニメーション
+├── duel.html    # PDB-max vs L字 Duel — HTML 構造
+├── duel.js      # PDB-max vs L字 Duel — ロジック（main.js から独立コピー）
+├── duel.css     # PDB-max vs L字 Duel — duel 専用スタイル
 └── doc/
     ├── design.md                    # 本ドキュメント
     └── pdb_algorithm_explanation.md # PDB アルゴリズム解説
 ```
+
+**設計方針：** duel.html・duel.js・duel.css は既存の index.html・main.js・style.css を一切変更しない。  
+共通化よりも「コピーして独立」を優先することで、既存ページへの影響リスクをゼロにしている。
 
 ---
 
@@ -44,7 +58,8 @@ puzzle-visualizer/
 |---|---|
 | ホスティング | GitHub Pages |
 | リポジトリ | `egg6112/puzzle-visualizer`（`main` ブランチ・`/ (root)`） |
-| 公開URL | `https://egg6112.github.io/puzzle-visualizer/` |
+| 公開URL (メイン) | `https://egg6112.github.io/puzzle-visualizer/` |
+| 公開URL (Duel) | `https://egg6112.github.io/puzzle-visualizer/duel.html` |
 | 自動デプロイ | `main` ブランチへの push で自動反映 |
 | バックエンドAPI | `https://puzzle-api-m99y.onrender.com`（別リポジトリ） |
 
@@ -52,33 +67,50 @@ puzzle-visualizer/
 
 ## 4. 画面レイアウト
 
+### 4-1. index.html（Algorithm Comparator）
+
 ```
-┌──────────────────────────────────────────────────────────────────────┐
-│           header（タイトル・サブタイトル・API docs リンク）              │
-├─────────────────────┬────────────────────────┬────────────────────────┤
-│                     │  パネル 0               │  パネル 1               │
-│  コントロール        │  ドロップダウン(A*)      │  ドロップダウン(PDB-max) │
-│  サイドバー         │  ┌──────────────────┐   │  ┌──────────────────┐   │
-│  （aside）          │  │  グリッド 224×224  │   │  │  グリッド 224×224  │   │
-│  ・Shuffle/Solve/   │  │  (loading overlay)│   │  │  (loading overlay)│   │
-│    Reset ボタン     │  └──────────────────┘   │  └──────────────────┘   │
-│  ・Max time 入力    │  統計（States/Moves/h/  │  統計（States/Moves/h/  │
-│  ・モード切替       │    Time）               │    Time）               │
-│  ・シークスライダー  │  h-compare バー(3行)    │  h-compare バー(3行)    │
-│  ・再生コントロール  │  ステータスバー          │  ステータスバー          │
-│  ・比較カードリスト  │                         │                         │
-│    (7行)            │                         │                         │
-│  ・API note         │                         │                         │
-└─────────────────────┴────────────────────────┴────────────────────────┘
+┌────────────────────────────────────────────────────────────────────┐
+│           header（タイトル・サブタイトル・API docs リンク）            │
+├──────────────────┬─────────────────────┬───────────────────────────┤
+│                  │  パネル 0            │  パネル 1                  │
+│  コントロール     │  ドロップダウン(A*) │  ドロップダウン(PDB-max)   │
+│  サイドバー      │  ┌───────────────┐  │  ┌───────────────┐         │
+│  ・Shuffle/Solve │  │  グリッド224×224│  │  │  グリッド224×224│         │
+│    /Reset        │  └───────────────┘  │  └───────────────┘         │
+│  ・Max time 入力 │  統計 States/Moves/ │  統計 States/Moves/        │
+│  ・モード切替    │    h / Time         │    h / Time                │
+│  ・シークバー    │  h-compare バー3行  │  h-compare バー3行         │
+│  ・再生コントロール│  ステータスバー     │  ステータスバー             │
+│  ・比較カードリスト│                   │                            │
+└──────────────────┴─────────────────────┴───────────────────────────┘
 ```
 
-**ブレークポイント（860px 以下）：**
+### 4-2. duel.html（PDB-max vs L字 Duel）
 
-サイドバーとパネルが縦積みになる（flex-direction: column）。
+```
+┌────────────────────────────────────────────────────────────────────┐
+│  header（タイトル「最適 vs 人間流」・← メインに戻るリンク）           │
+├──────────────────┬─────────────────────┬───────────────────────────┤
+│                  │  左パネル            │  右パネル                  │
+│  コントロール     │  [PDB-max]          │  [L字]                    │
+│  サイドバー      │  max(row,diag) PDB  │  段階的解法                │
+│  ・Shuffle/Solve │  ┌───────────────┐  │  ┌───────────────┐         │
+│    /Reset        │  │  グリッド224×224│  │  │  グリッド224×224│         │
+│  ・Max time 入力 │  └───────────────┘  │  └───────────────┘         │
+│  ・Solution Replay│  h(MH) / h(WD)     │  h(MH) / h(WD)            │
+│  ・シークバー    │  Time / Optimal     │  Time / Total Moves        │
+│    (フェーズマーカー│  Moves / States     │  h-compare バー2行        │
+│     付き)        │  h-compare バー2行  │  現フェーズ名ボックス       │
+│  ・再生コントロール│  ステータスバー     │  ステータスバー             │
+│  ・Speed スライダー│                   │                            │
+│  ・凡例          │                    │                            │
+└──────────────────┴─────────────────────┴───────────────────────────┘
+```
 
 ---
 
-## 5. ユーザー操作フロー
+## 5. ユーザー操作フロー（index.html）
 
 ```
 起動
@@ -89,250 +121,216 @@ puzzle-visualizer/
   ▼
 [Shuffle] ── ランダムウォーク150手で盤面をシャッフル
   │            initMH・initWD を更新（プログレスバーの基準値）
-  │            initPDB は Solve 完了後に最初の /solve_one レスポンスから取得
   │
   ▼
-[Solve] ────────────────────────────────────────────────────────────────┐
-  │                                                                       │
-  ├─ setBusy(true)                                                        │
-  ├─ algoStates を全キー 'waiting' に初期化                               │
-  ├─ updateComparisonTable()（全行 "—" 表示）                              │
-  │                                                                       │
-  ├─ GET /warmup（失敗しても続行）                                         │
-  │      └─ Render コールドスタート対策                                     │
-  │                                                                       │
-  ├─ for algo of ALGO_KEYS                                                │
-  │      （'astar'→'idastar'→'wdastar'→'wdidastar'                       │
-  │        →'pdbidastar'→'diagidastar'→'maxidastar'）                    │
-  │      │                                                                │
-  │      ├─ algoStates[algo] = 'running'                                  │
-  │      ├─ updateComparisonTable()（該当行にスピナー）                    │
-  │      ├─ updatePanelLoading()（パネルが該当アルゴなら Solving… 表示）   │
-  │      │                                                                │
-  │      ├─ POST /solve_one                                               │
-  │      │      body: { board, algo, max_time }                           │
-  │      │      signal: AbortController（max_time + 15s でタイムアウト）   │
-  │      │                                                                │
-  │      ├─ 成功時（HTTP 200）                                             │
-  │      │      ├─ initPDB = data.h_pdb（最初の non-zero 値で確定）        │
-  │      │      ├─ results[algo] に path / exploredPath / exploredHPdb を格納
-  │      │      ├─ algoStates[algo] = 'done'                              │
-  │      │      ├─ updateComparisonTable()（行を即時確定）                 │
-  │      │      └─ panelAlgos[p] === algo なら setPanelResult / renderAll  │
-  │      │                                                                │
-  │      ├─ HTTP 400 時（解けない盤面）                                    │
-  │      │      └─ showGlobalError / aborted=true / 残りアルゴはスキップ   │
-  │      │                                                                │
-  │      └─ AbortError / TypeError 時                                     │
-  │             ├─ algoStates[algo] = 'failed'                            │
-  │             └─ TypeError → showGlobalError / aborted=true             │
-  │                                                                       │
-  ├─ setBusy(false)                                                        │
-  ├─ updateComparisonTable()（allDone=true で★・カラー確定）               │
-  └─ 1件以上成功 → step=0 → renderAll() → play()                          │
-               │
-               ▼
-          再生中 ── [Pause] / [◀◀] / [▶▶] / シークスライダー
-               │
-               ▼
-          ドロップダウンでパネルのアルゴリズムを切り替え（switchPanelAlgo）
-               │
-               ▼
-          比較テーブルの [▶] ボタンで任意アルゴリズムを Solution Replay
-               │
-               ▼
-          [Solution Replay] / [Explore Replay] でモード切り替え
-               │
-               ▼
-          [Reset] ── ゴール盤面に戻す・results をクリア
+[Solve] ── GET /warmup → 7本逐次 POST /solve_one
+  │         完了行からリアルタイムに比較テーブルと各パネルを更新
+  │         全完了後 → play() で自動再生開始
+  │
+  ▼
+再生中 ── [Pause] / [◀◀] / [▶▶] / シークスライダー
+  │
+  ▼
+ドロップダウンでパネルのアルゴリズムを切り替え
+  │
+  ▼
+[Solution Replay] / [Explore Replay] でモード切り替え
+  │
+  ▼
+[Reset] ── ゴール盤面に戻す
 ```
 
 ---
 
-## 6. JavaScript 設計（main.js）
+## 6. ユーザー操作フロー（duel.html）
 
-### 6-1. 定数
+```
+起動
+  │
+  ▼
+ゴール盤面を表示
+  │
+  ▼
+[Shuffle] ── ランダムウォーク150手でシャッフル
+  │            両パネルに MH・WD 値をすぐ表示
+  │
+  ▼
+[Solve] ── GET /warmup
+  │     ├─ POST /solve_one {algo:"maxidastar"} → PDB-max 解を取得
+  │     └─ POST /solve_staged             → L字 解を取得（phases 付き）
+  │         両パネルのローディングオーバーレイを切り替えながら逐次実行
+  │         完了後 → step=0 → play() で自動同時再生開始
+  │
+  ▼
+再生中（PDB-max と L字 が同じ step 変数で同期）
+  │  ├─ PDB-max: 最適46手前後で先に完了 → ゴール盤面で停止
+  │  └─ L字: 94手前後で長く動き続ける → フェーズ名が手順に合わせ切り替わる
+  │
+  ▼
+[◀◀] / [▶▶] / シークスライダー（フェーズマーカー付き）
+  │
+  ▼
+[Reset] ── ゴール盤面に戻す
+```
+
+---
+
+## 7. JavaScript 設計（main.js）
+
+### 7-1. 定数
 
 | 定数 | 値 | 説明 |
 |---|---|---|
-| `API_BASE` | `"https://puzzle-api-m99y.onrender.com"` | API のベース URL |
-| `API_URL` | `API_BASE + '/compare'` | （後方互換用・現在は未使用） |
+| `API_BASE` | `"https://puzzle-api-m99y.onrender.com"` | API ベース URL |
 | `SIZE` | `4` | グリッドサイズ |
 | `CELL` | `56` | セルサイズ（px） |
 | `GAP` | `3` | タイルのセル内オフセット（px） |
 | `GOAL` | `[1,2,...,15,0]` | ゴール盤面 |
-| `ALGO_KEYS` | `['astar','idastar','wdastar','wdidastar','pdbidastar','diagidastar','maxidastar']` | アルゴリズム識別キー（実行順） |
-| `ALGO_LABELS` | `{astar:'A*', ..., pdbidastar:'PDB-row', diagidastar:'PDB-diag', maxidastar:'PDB-max'}` | アルゴリズム表示名マップ |
-| `ALGO_DESC` | `{astar:'Best-first search', ..., diagidastar:'Diagonal PDB, IDA*', maxidastar:'max(row,diag) PDB, IDA*'}` | パネルヘッダー用の説明文マップ |
-| `ALGO_BADGE` | `{astar:'b-a', ..., pdbidastar:'b-pdb', diagidastar:'b-pdb-diag', maxidastar:'b-pdb-max'}` | バッジ CSS クラスマップ |
-| `SPEED_MS` | `[1800,1200,800,550,400,280,180,110,60,30]` | 速度スライダー値 1〜10 に対応する ms |
+| `ALGO_KEYS` | `['astar','idastar','wdastar','wdidastar','pdbidastar','diagidastar','maxidastar']` | 実行順 |
+| `SPEED_MS` | `[1800,1200,800,550,400,280,180,110,60,30]` | 速度スライダー 1〜10 対応 ms |
 
-### 6-2. グローバル状態
+### 7-2. グローバル状態
 
 | 変数 | 型 | 説明 |
 |---|---|---|
-| `board` | `number[]` | 現在の盤面（16 要素） |
-| `step` | `number` | 再生中のステップインデックス |
-| `playing` | `boolean` | 自動再生中かどうか |
-| `timer` | `number\|null` | `setTimeout` のタイマー ID |
-| `speed` | `number` | 1 ステップあたりのミリ秒 |
+| `board` | `number[]` | 現在の盤面（16要素） |
+| `step` | `number` | 再生ステップインデックス |
+| `playing` | `boolean` | 自動再生中フラグ |
+| `speed` | `number` | 1ステップあたりの ms |
 | `replayMode` | `'explore'\|'solution'` | 再生モード |
-| `panelAlgos` | `string[]` | `panelAlgos[p]` = パネル p が現在表示しているアルゴリズムキー。デフォルト `['astar','maxidastar']` |
-| `results` | `object` | アルゴリズムキー → 結果オブジェクトのマップ |
-| `algoStates` | `object` | アルゴリズムキー → `'waiting'\|'running'\|'done'\|'failed'` |
-| `initMH` | `number` | Shuffle 時の初期 Manhattan 距離（プログレスバー基準） |
-| `initWD` | `number` | Shuffle 時の初期 Walking Distance（プログレスバー基準） |
-| `initPDB` | `number` | Solve 後の初期 PDB 値（最初の /solve_one レスポンスの `h_pdb`）。0 = 未取得 |
-| `tileEls` | `object[][]` | `tileEls[p][v]` = パネル p・タイル番号 v の DOM 要素 |
+| `panelAlgos` | `string[2]` | 各パネルが表示するアルゴリズムキー |
+| `results` | `object` | algo → 結果オブジェクトのマップ |
+| `algoStates` | `object` | algo → `'waiting'\|'running'\|'done'\|'failed'` |
+| `initMH` | `number` | Shuffle 時の初期 Manhattan 距離 |
+| `initWD` | `number` | Shuffle 時の初期 Walking Distance |
+| `initPDB` | `number` | Solve 後の初期 PDB 値（最初の /solve_one レスポンスから） |
+| `tileEls` | `object[2]` | `tileEls[p][v]` = パネル p・タイル v の DOM 要素 |
 
 #### results オブジェクトの構造
 
 ```js
 results[key] = {
-  // API から受け取るフィールド（/solve_one レスポンスに存在）
-  moves: string[],
-  states_explored: number,
-  optimal_moves: number,
-  time_ms: number,
-  explored_log: number[][],
-  explored_h_pdb: number[],   // PDB h値の並走配列（explored_log と同長）
-  h_manhattan: number,        // 初期盤面の Manhattan+LC 値
-  h_wd: number,               // 初期盤面の WD 値
-  h_pdb: number,              // 初期盤面の PDB 値（PDB未ロード時は 0）
+  // API から受け取るフィールド
+  moves, states_explored, optimal_moves, time_ms,
+  explored_log, explored_h_pdb, h_manhattan, h_wd, h_pdb,
+  // エラー時: error, time_ms, states_explored
 
-  // JS 側で生成するフィールド（成功時のみ）
-  path: number[][],           // moves から構築した盤面スナップショット列
-  exploredPath: number[][],   // explored_log をそのまま変換
-  exploredHPdb: number[],     // explored_h_pdb をそのまま保持（step index で参照）
-
-  // エラー時のみ
-  error: string,
+  // JS 側で生成（成功時のみ）
+  path:         buildPath(initial, moves),       // 盤面スナップショット列
+  exploredPath: buildExploredPath(explored_log), // Explore Replay 用
+  exploredHPdb: explored_h_pdb,                 // step index で参照
 }
 ```
 
-### 6-3. Walking Distance 事前計算
+### 7-3. Walking Distance 事前計算
 
-solver.py の `_build_wd_table` / `_row_config` / `_col_config` を JS で完全に再実装している。
+solver.py の `_build_wd_table` を JS で完全再実装。  
+`buildWdTable()` → `Map<string, number>`（24,964エントリ）をモジュール評価時に 1 回構築。
 
-| 関数 | 説明 |
-|---|---|
-| `buildWdTable()` | モジュール評価時に 1 回だけ実行。ゴール行配置から BFS し `Map<string, number>` を返す |
-| `rowConfig(state)` | 行方向の配置キーを `"t00,t01,...,br"` 形式の文字列で返す |
-| `colConfig(state)` | 列方向の配置キーを同形式で返す |
-| `walkingDistance(state)` | `_WD_TABLE.get(rowConfig) + _WD_TABLE.get(colConfig)` |
-| `manhattan(state)` | 各タイルのマンハッタン距離の合計 |
-
-### 6-4. 主要関数
+### 7-4. 主要関数
 
 | 関数 | 説明 |
 |---|---|
-| `randomShuffle()` | ゴールからランダムウォーク 150 手でシャッフル |
-| `buildPath(initial, moves)` | API の `moves` リストから盤面スナップショット列を生成 |
-| `buildExploredPath(log)` | API の `explored_log` を盤面配列に変換 |
+| `randomShuffle()` | ゴールからランダムウォーク 150 手 |
+| `buildPath(initial, moves)` | moves リストから盤面スナップショット列を生成 |
 | `initGrids()` | タイル DOM 要素を生成してグリッドに挿入 |
-| `placePanel(p, st)` | CSS `left/top` でタイルを絶対配置。正位置タイルに `.correct` クラスを付与 |
-| `flashPanel(p, from, to)` | 移動したタイルに `.moved` クラスを付与してグロウアニメーションを発火 |
-| `activePath(p)` | パネル p の現在モードに対応するパス配列を返す |
-| `renderPanel(p, prevStep)` | パネル p を現在 step で描画。prevStep がある場合はフラッシュ |
+| `placePanel(p, st)` | CSS `left/top` でタイルを絶対配置。`.correct` クラスを付与 |
+| `flashPanel(p, from, to)` | 移動タイルに `.moved` クラスを付与（グロウアニメーション） |
 | `renderAll(prevStep)` | 両パネルを描画し `syncProgress()` を呼ぶ |
-| `updateHBar(p, st)` | MH・WD を計算し統計と進捗バーを更新。Explore Replay 時は `exploredHPdb[step]` から PDB バーも更新 |
-| `setPanelResult(p)` | パネル p の統計（states/moves/time）と status を results から更新 |
-| `setPanelStatus(p, msg, type)` | ステータスバーのテキストと CSS クラスを設定 |
-| `updatePanelHeader(p)` | ドロップダウン選択に合わせてバッジ・説明文を更新 |
-| `updateComparisonTable()` | 7 アルゴリズムの比較カードリストを results と algoStates から更新。`allDone` 時のみ★・カラーを確定 |
-| `updatePanelLoading()` | `algoStates[panelAlgos[p]] === 'running'` のパネルだけローディングオーバーレイを表示 |
-| `syncProgress()` | シークスライダーの max・value・disabled を更新 |
-| `showLoading(visible)` | 両パネルのローディングオーバーレイを一括表示/非表示 |
-| `showGlobalError(msg)` | グローバルエラーバナーを表示 |
-| `clearGlobalError()` | グローバルエラーバナーを非表示 |
-| `setBusy(busy)` | 解答中にボタン・ドロップダウンをすべて disabled にする |
-| `play()` | 自動再生開始（step が末尾なら先頭に戻す） |
-| `pause()` | タイマーを止めて playing=false |
-| `togglePlay()` | Play/Pause を切り替え |
-| `tick()` | 1 ステップ進めて自動再生を継続するタイマーコールバック |
-| `stepForward()` | 1 ステップ進む（手動） |
-| `stepBack()` | 1 ステップ戻る（手動） |
-| `setReplayMode(mode)` | Explore / Solution モードを切り替え |
-| `switchPanelAlgo(p, key)` | パネル p のアルゴリズムを切り替え、ヘッダー・統計・描画を更新 |
-| `applySpeed(val)` | スライダー値（1〜10）を `SPEED_MS` テーブルで ms に変換し `speed` に設定 |
-| `doShuffle()` | 盤面をシャッフルして initMH・initWD・initPDB・results・algoStates をリセット |
-| `doSolve()` | ウォームアップ → 7 本逐次 `/solve_one` 呼び出し → 結果をリアルタイムにパネルへ反映 |
-| `doReset()` | ゴール盤面に戻す |
+| `updateHBar(p, st)` | MH・WD・PDB を計算しバーと統計を更新 |
+| `updateComparisonTable()` | 比較カードリスト（7行）を results と algoStates から更新 |
+| `doSolve()` | ウォームアップ → 7本逐次 `/solve_one` → リアルタイム反映 |
+| `play()` / `pause()` / `tick()` | 再生・停止・ステップ進行 |
+| `setReplayMode(mode)` | Explore / Solution モード切り替え |
 
 ---
 
-## 7. API 通信フロー（doSolve）
+## 8. JavaScript 設計（duel.js）
+
+main.js から puzzle ヘルパーと WD テーブルをコピーし、duel 専用ロジックを追加。  
+main.js は変更しない・`import` も使わない（完全独立ファイル）。
+
+### 8-1. main.js からコピーした関数
+
+`buildWdTable` / `rowConfig` / `colConfig` / `walkingDistance` / `manhattan` /  
+`getNeighbors` / `randomShuffle` / `buildPath` / `initGrids` / `placePanel` / `flashPanel`
+
+### 8-2. duel 専用状態
+
+| 変数 | 説明 |
+|---|---|
+| `board` | 現在の盤面 |
+| `pdbPath` | PDB-max の盤面スナップショット列 |
+| `stagedPath` | L字 の盤面スナップショット列 |
+| `pdbResult` | /solve_one の結果オブジェクト |
+| `stagedResult` | /solve_staged の結果オブジェクト |
+| `stagedPhases` | /solve_staged の phases 配列 |
+| `step` | 共有ステップインデックス（両パネルが同じ値を使う） |
+| `initMH`, `initWD` | Shuffle 時の初期 h 値（h-bar の基準） |
+
+### 8-3. duel 専用関数
+
+| 関数 | 説明 |
+|---|---|
+| `getStateAt(p, s)` | パネル p のパスから step s の盤面を返す（パス末尾でクランプ） |
+| `updateHBar(p, st)` | 両パネルの MH・WD バーを更新（PDB バーなし） |
+| `updatePhaseDisplay()` | 現在 step が属する L字 フェーズ名を右パネルに表示 |
+| `checkSolvedBothPanels()` | 各パネルがゴールに到達したら "Solved! ✓" を表示 |
+| `updatePhaseMarkers()` | シークバーのフェーズ境界に `.phase-marker` を挿入 |
+| `doSolve()` | /warmup → /solve_one(maxidastar) → /solve_staged を逐次実行 |
+| `stepForward()` / `stepBack()` | 1 ステップ進む / 戻る |
+
+### 8-4. 同時再生の設計
+
+両パネルが同一の `step` 変数を共有する。
 
 ```
-doSolve() 呼び出し
-      │
-      ├─ setBusy(true)
-      ├─ algoStates = { astar:'waiting', ..., maxidastar:'waiting' }
-      ├─ updateComparisonTable()（全行 "—"）
-      │
-      ├─ GET /warmup（失敗しても continue）
-      │
-      ├─ for algo of ['astar','idastar','wdastar','wdidastar',
-      │               'pdbidastar','diagidastar','maxidastar']
-      │      │
-      │      ├─ aborted なら { error:'Skipped' } で skip
-      │      │
-      │      ├─ algoStates[algo] = 'running'
-      │      ├─ updateComparisonTable()（スピナー表示）
-      │      ├─ updatePanelLoading()
-      │      │
-      │      ├─ POST /solve_one
-      │      │      body: { board, algo, max_time }
-      │      │      signal: AbortController（max_time + 15s）
-      │      │
-      │      ├─ res.ok チェック
-      │      │      400 → aborted=true, showGlobalError
-      │      │      他NG → per-algo failed
-      │      │
-      │      ├─ data = await res.json()
-      │      ├─ initPDB = data.h_pdb（最初の non-zero で確定）
-      │      │
-      │      ├─ data.error あり → algoStates='failed', results[algo]={error,...}
-      │      │   なし           → algoStates='done',
-      │      │                     results[algo]={...data,
-      │      │                       path:buildPath(...),
-      │      │                       exploredPath:buildExploredPath(...),
-      │      │                       exploredHPdb: data.explored_h_pdb ?? []}
-      │      │
-      │      └─ updateComparisonTable() / updatePanelLoading()
-      │         panelAlgos[p]===algo → setPanelResult / renderAll
-      │
-      ├─ setBusy(false)
-      ├─ updateComparisonTable()（allDone=true → ★ 確定）
-      └─ 成功アルゴが1件以上 → step=0 → renderAll() → play()
+maxPathLen() = max(pdbPath.length, stagedPath.length)
+getStateAt(0, step) → pdb のパスから、path の末尾でクランプ（先に完了しても止まる）
+getStateAt(1, step) → staged のパスから同様
+```
 
-  catch (AbortError)
-      results[algo] = { error: 'Timed out (Ns)', ... }
-  catch (TypeError / fetch失敗)
-      showGlobalError("Cannot reach API…")
-      aborted = true
+PDB-max は46手前後で先に GOAL に到達し、その後は GOAL 状態を表示し続ける。  
+L字 は94手前後まで動き続ける → 「L字の方が手数が多い」が視覚的に明確になる。
+
+---
+
+## 9. API 通信
+
+### 9-1. index.html の通信フロー
+
+```
+GET /warmup
+for algo of ALGO_KEYS:
+    POST /solve_one {board, algo, max_time}
+    → results[algo] を更新・パネルをリアルタイム描画
+```
+
+### 9-2. duel.html の通信フロー
+
+```
+GET /warmup
+POST /solve_one {board, algo:"maxidastar", max_time} → pdbResult / pdbPath
+POST /solve_staged {board}                           → stagedResult / stagedPhases / stagedPath
+→ 両パネルを step=0 から play()
 ```
 
 ---
 
-## 8. 再生モード
+## 10. 再生モード（index.html）
 
-| モード | データソース | スライダー表示 | 用途 |
+| モード | データソース | PDB バー | 用途 |
 |---|---|---|---|
-| Explore Replay | `results[key].exploredPath`（`explored_log`） | ステップ N / M | アルゴリズムがどの順番で盤面を探索したか。PDB バーがリアルタイム更新される |
-| Solution Replay | `results[key].path`（`moves` から構築） | ステップ N / M | 最短解答手順のステップ。PDB バーは "PDB:—" 固定 |
+| Explore Replay | `results[key].exploredPath` | `exploredHPdb[step]` を参照 | 探索順の可視化 |
+| Solution Replay | `results[key].path` | "PDB:—" 固定 | 解答手順の可視化 |
 
-- 両パネルは**同じ `step` 変数を共有**する
-- スライダーの最大値は `max(パネル 0 のパス長, パネル 1 のパス長) - 1`
-- モード切り替え・アルゴリズム切り替え時は `step = 0` にリセットして先頭から再生
+duel.html は Solution Replay のみ（Explore モードなし）。
 
 ---
 
-## 9. 比較カードリスト
+## 11. 比較カードリスト（index.html）
 
 `updateComparisonTable()` が全 7 アルゴリズムの結果を描画する。
-
-**レイアウト構造（縦持ちカードリスト）：**
 
 ```
 ALGORITHM    STS   STATES    TIME
@@ -345,152 +343,90 @@ ALGORITHM    STS   STATES    TIME
 [PDB-max]     ✓    49,473★   6.24s   ▶
 ```
 
-| 項目 | ロジック |
-|---|---|
-| waiting | 全セル "—"（Solve 未実行） |
-| running | Status セルにインラインスピナー（`.tbl-spinner`）。States/Time は "—" |
-| Status（done） | 成功: `✓`（緑ピル）、失敗: `✗`（赤ピル） |
-| States | `allDone` 時のみ: 最少★ = `val-best`（緑）、5倍超 = `val-slow`（橙）、それ以外 = `val-mid` |
-| Time | `allDone` 時のみ: 最速★ = `val-best`（緑）、5倍超 = `val-slow`（橙）、それ以外 = `val-mid` |
-| Replay | 各行の [▶] ボタン押下で該当アルゴリズムをパネルに表示し Solution Replay 開始 |
-
-**ID 命名規則（JS との対応）：**
-
-各行の可変セルは `id="tbl-{algo}-{metric}"` を持つ `<span>` 要素。  
-ラッパー `<div class="cmp-col-*">` がレイアウトを担うため、JS の `el.className = 'tbl-val ...'` がラッパーに影響しない。
+- `allDone` 時のみ★・カラー確定（最少 = `val-best`、5倍超 = `val-slow`）
+- 各行 [▶] ボタンで該当アルゴリズムの Solution Replay をパネルに反映
 
 ---
 
-## 10. アニメーション速度
+## 12. アニメーション速度
 
-スライダー値（1〜10）に対応するミリ秒テーブル：
+スライダー値（1〜10）に対応する ms テーブル（SPEED_MS）：
 
-| スライダー | ms | 倍率表示 |
+| スライダー | ms | 倍率 |
 |---|---|---|
 | 1 | 1800 | 0.6× |
-| 2 | 1200 | 0.8× |
-| 3 | 800 | 1.3× |
-| 4 | 550 | 1.8× |
 | 5 | 400 | 2.5×（デフォルト） |
-| 6 | 280 | 3.6× |
-| 7 | 180 | 5.6× |
-| 8 | 110 | 9.1× |
-| 9 | 60 | 16.7× |
 | 10 | 30 | 33.3× |
 
 ---
 
-## 11. CSS 設計
+## 13. CSS 設計（style.css）
 
-### 11-1. デザイントークン（CSS カスタムプロパティ）
+### 13-1. デザイントークン
 
-Dark Glass パレットをベースにした暗色テーマ。
+Dark Glass パレットをベースにした暗色テーマ。主要変数：
 
 | 変数 | 値 | 用途 |
 |---|---|---|
 | `--bg` | `#0a0f1e` | ページ背景 |
 | `--surface` | `#111827` | カード・パネル背景 |
-| `--surface2` | `#1e2d45` | 入力欄・stat カード背景 |
-| `--border` | `#2d3f58` | ボーダー色 |
 | `--accent` | `#6366f1` | インディゴ（A* カラー・ボタン） |
-| `--accent-hi` | `#818cf8` | インディゴ明（A* バッジ・統計値） |
-| `--astar-color` | `#818cf8` | A* バッジ色 |
-| `--idastar-color` | `#34d399` | IDA* バッジ色（エメラルド） |
-| `--wda-color` | `#fb923c` | WD+A* バッジ色（オレンジ） |
-| `--wida-color` | `#c084fc` | WD+IDA* バッジ色（パープル） |
-| `--pdb-color` | `#2dd4bf` | PDB-row バッジ色（ティール） |
-| `--pdb-diag-color` | `#22d3ee` | PDB-diag バッジ色（シアン） |
-| `--pdb-max-color` | `#7dd3fc` | PDB-max バッジ色（ライトスカイ） |
-| `--correct` | `#1d4ed8` | 正位置タイルの背景 |
-| `--success` | `#10b981` | Solve ボタン / Solved! ステータス |
-| `--cell` | `56px` | グリッドのセルサイズ（4×56 = 224px） |
-| `--tile` | `50px` | タイルのサイズ（セルより 6px 小さい） |
-| `--grid-size` | `224px` | グリッド全体のサイズ |
+| `--pdb-max-color` | `#7dd3fc` | PDB-max / L字フェーズ表示に流用 |
+| `--cell` | `56px` | グリッドセルサイズ（4×56 = 224px） |
+| `--tile` | `50px` | タイルサイズ（セルより 6px 小さい） |
 
-### 11-2. アルゴリズムバッジ
+### 13-2. タイルアニメーション
 
-| CSS クラス | アルゴリズム | 色 |
-|---|---|---|
-| `.b-a` | A* | インディゴ（`--astar-color`） |
-| `.b-ida` | IDA* | エメラルド（`--idastar-color`） |
-| `.b-wda` | WD+A* | オレンジ（`--wda-color`） |
-| `.b-wida` | WD+IDA* | パープル（`--wida-color`） |
-| `.b-pdb` | PDB-row | ティール（`--pdb-color`） |
-| `.b-pdb-diag` | PDB-diag | シアン（`--pdb-diag-color`） |
-| `.b-pdb-max` | PDB-max | ライトスカイ（`--pdb-max-color`） |
+- **移動**：`transition: left/top 0.22s cubic-bezier(0.4,0,0.2,1)`
+- **フラッシュ**：`@keyframes tile-moved`（インディゴのグロウ、400ms）
+- **正位置**：`.correct` クラスで青ハイライト
 
-PDB 系 3 種はティール → シアン → ライトスカイの濃淡で識別できる。
+### 13-3. h-compare バー
 
-### 11-3. タイルアニメーション
+3行（MH / WD / PDB）の進捗バー。`(1 - 現在h / 初期h) × 100%` で幅を決定。  
+PDB バーは Explore Replay 時のみ有効（duel.html では 2 行のみ）。
 
-- **移動**：`transition: left 0.22s cubic-bezier(0.4,0,0.2,1), top 0.22s ...` による CSS トランジション
-- **フラッシュ**：`@keyframes tile-moved`（インディゴのグロウ）を `.moved` クラスで発火（400ms）
-- **正位置**：ゴール位置に収まったタイルに `.correct` クラスを付与（青色ハイライト + グロウ）
+### 13-4. アクセシビリティ
 
-### 11-4. h-compare プログレスバー（3 行）
-
-各パネルの下部に Manhattan・Walking Distance・PDB の進捗を 3 本のバーで表示する。
-
-```
-MH:8   ████████████████░░░░░░░░  ← --accent-hi (インディゴ)
-WD:10  ████████████████████░░░░  ← #34d399 (エメラルド)
-PDB:32 ████████████░░░░░░░░░░░░  ← --pdb-color (ティール)
-```
-
-- **進捗率** = `(1 - 現在h / 初期h) × 100%`（0% = 初期状態、100% = ゴール）
-- MH・WD の初期値は Shuffle 時に `initMH`・`initWD` として記録する
-- `initPDB` は Solve 後に最初の `/solve_one` レスポンスの `h_pdb` から取得する
-- PDB バーは **Explore Replay のみ**有効。`exploredHPdb[step]` を参照する（Solution Replay では "PDB:—"）
-- IDA* 系は h_pdb が一時的に初期値を超えることがある（バックトラック）→ width を `[0, 100%]` にクランプ
-- `explored_h_pdb` の物差しは **pdb-01（行優先）** に統一。diagidastar / maxidastar 実行中でも同じ尺度で比較できる
-
-### 11-5. 比較カードリスト（.cmp-row）
-
-```css
-.cmp-row         /* flex コンテナ。1行 = 1アルゴリズム */
-.cmp-col-badge   /* flex: 0 0 66px — バッジ列 */
-.cmp-col-status  /* flex: 0 0 22px — ✓/✗/スピナー列 */
-.cmp-col-states  /* flex: 1        — States 列（右寄せ） */
-.cmp-col-time    /* flex: 0 0 40px — Time 列（右寄せ） */
-.cmp-col-replay  /* flex: 0 0 20px — [▶] ボタン列 */
-```
-
-### 11-6. インラインスピナー（.tbl-spinner）
-
-比較カードリストの Status セルに表示する 9px のインラインスピナー。  
-`@keyframes spin`（既存の大型スピナーと共用）でアニメーションする。
-
-### 11-7. アクセシビリティ対応
-
-| 対応 | 内容 |
-|---|---|
-| `prefers-reduced-motion` | タイルの transition・アニメーション・スピナーをすべて無効化 |
-| `<aside aria-label="Control panel">` | コントロールパネルのセマンティクス |
-| `aria-label` | Prev（◀◀）/ Next（▶▶）ボタンのスクリーンリーダー対応 |
-| `<label for="max-time-input">` | Max time 入力欄とラベルの関連付け |
-| `role="alert"` | グローバルエラーバナーの通知 |
-| `aria-live="polite"` | ローディングオーバーレイの動的更新通知 |
+`prefers-reduced-motion` でアニメーションを無効化。  
+`aria-label` / `role="alert"` / `aria-live="polite"` / `<label for>` を適切に使用。
 
 ---
 
-## 12. バージョン履歴
+## 14. CSS 設計（duel.css）
+
+style.css を変更せず、duel 専用スタイルのみを追加する。
+
+| クラス | 用途 |
+|---|---|
+| `.seek-wrap` | シークバーと `.phase-marker` を重ねるための `position: relative` ラッパー |
+| `.phase-marker` | フェーズ境界を示す縦線（`position: absolute`）。L字 の phases データから生成 |
+| `.duel-badge-staged` | L字 バッジ（オレンジ系） |
+| `.duel-phase-box` | 現フェーズ名表示ボックス（右パネル下部） |
+| `.duel-label-contrast` | 「🔍 遅い・最短」「⚡ 速い・遠回り」のコントラストラベル |
+| `.duel-legend` | サイドバー下部の凡例 |
+
+---
+
+## 15. バージョン履歴
 
 | バージョン | 日付 | 変更内容 |
 |---|---|---|
 | 1.0.0 | 2026-05-31 | 初版。A*・IDA* の 2 アルゴリズム、固定パネル |
-| 2.0.0 | 2026-06-01 | WD+A*・WD+IDA* を追加。パネルをドロップダウンで切り替え可能に。h-compare バー（MH/WD 2行）・比較テーブルの★カラーコーディングを追加。Walking Distance を JS 側でも事前構築 |
-| 3.0.0 | 2026-06-02 | PDB+IDA* を 5 本目として追加。`/compare` 一括呼び出しから `/solve_one` 逐次呼び出しに変更（algoStates ステートマシン・スピナー・逐次フィードバック）。比較表を横持ちテーブルから縦持ちカードリストに刷新。h-compare バーに PDB バー（3行目）を追加。PDB バーは Explore Replay で `exploredHPdb[step]` を参照 |
-| 4.0.0 | 2026-06-03 | PDB-diag / PDB-max を追加し 7 アルゴリズム構成に拡張。比較カードリスト 5行→7行。ドロップダウン 5択→7択。pdbidastar の表示名を "PDB+IDA*" → "PDB-row" に変更。`--pdb-diag-color` / `--pdb-max-color` CSS 変数・`.b-pdb-diag` / `.b-pdb-max` バッジクラスを追加。Panel 1 のデフォルトを `maxidastar`（PDB-max）に変更 |
+| 2.0.0 | 2026-06-01 | WD+A*・WD+IDA* を追加。パネルをドロップダウンで切り替え可能に。h-compare バー（MH/WD 2行）・比較テーブルの★カラーコーディングを追加 |
+| 3.0.0 | 2026-06-02 | PDB+IDA* を追加。`/compare` 一括呼び出しから `/solve_one` 逐次呼び出しに変更（algoStates ステートマシン）。比較表を縦持ちカードリストに刷新。h-compare バーに PDB バー（3行目）を追加 |
+| 4.0.0 | 2026-06-03 | PDB-diag / PDB-max を追加し 7 アルゴリズム構成に拡張。`.b-pdb-diag` / `.b-pdb-max` バッジクラス追加 |
+| 5.0.0 | 2026-06-05 | `duel.html` / `duel.css` / `duel.js` を新規追加。PDB-max vs L字 同時 Solution Replay 対比ページ。/solve_staged API を使用。フェーズ名表示・シークバーマーカー・h-bar 表示を実装 |
 
 ---
 
-## 13. 関連リポジトリ・URL
+## 16. 関連リポジトリ・URL
 
 | 名前 | URL |
 |---|---|
 | puzzle-visualizer（フロント） | `https://egg6112.github.io/puzzle-visualizer/` |
+| puzzle-visualizer duel ページ | `https://egg6112.github.io/puzzle-visualizer/duel.html` |
 | puzzle-visualizer リポジトリ | `https://github.com/egg6112/puzzle-visualizer` |
 | puzzle-api（バックエンド） | `https://puzzle-api-m99y.onrender.com` |
 | puzzle-api Swagger UI | `https://puzzle-api-m99y.onrender.com/docs` |
-| puzzle-api リポジトリ | `https://github.com/egg6112/Hosted`（`puzzle-api/` サブディレクトリ） |
 | about-me（リンク元） | `https://egg6112.github.io/about-me/` |
