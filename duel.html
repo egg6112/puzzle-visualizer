@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PDB-max vs L字 — 最適 vs 人間流</title>
+  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="duel.css">
+</head>
+<body>
+
+<header>
+  <h1>PDB-max vs L字 — 最適 vs 人間流</h1>
+  <p class="subtitle">
+    最適探索（数秒）vs 段階的解法（数十ms）&middot; 手数 vs スピード の対比
+    &middot; <a href="index.html">← メインに戻る</a>
+  </p>
+</header>
+
+<!-- ── Control bar ────────────────────────────────────────────────────────── -->
+<div class="duel-bar">
+  <div class="duel-bar-row">
+    <div class="btn-row">
+      <button id="btn-shuffle" class="btn secondary-btn">Shuffle</button>
+      <button id="btn-solve"   class="btn accent-btn">Solve</button>
+      <button id="btn-play"    class="btn primary-btn">&#9654; Play</button>
+    </div>
+    <div class="speed-row">
+      <span class="speed-label-text">Speed</span>
+      <input id="speed-slider" type="range" min="1" max="10" value="5">
+      <span id="speed-display" class="speed-val">2.5&times;</span>
+    </div>
+  </div>
+  <div class="duel-seek-row">
+    <div class="seek-wrap">
+      <input id="seek-slider" type="range" min="0" max="0" value="0" disabled>
+      <div id="phase-markers" aria-hidden="true"></div>
+    </div>
+  </div>
+  <div id="global-error" class="global-error hidden" role="alert">
+    <span id="global-error-msg"></span>
+    <button id="global-error-close" class="global-error-close" aria-label="Dismiss">&#215;</button>
+  </div>
+</div>
+
+<!-- ── Dual panels ────────────────────────────────────────────────────────── -->
+<div class="duel-panels">
+
+  <!-- Left: PDB-max -->
+  <section class="panel duel-panel" id="panel-pdb" aria-label="PDB-max">
+    <div class="panel-header">
+      <div class="panel-header-left">
+        <span class="algo-badge b-pdb-max">PDB-max</span>
+        <span class="algo-desc">max(row,diag) PDB &middot; IDA* &middot; 最適解</span>
+      </div>
+      <span class="duel-label-contrast">🔍 遅いが最短</span>
+    </div>
+
+    <div class="grid" id="grid-pdb">
+      <div id="loading-pdb" class="loading-overlay hidden" aria-live="polite">
+        <div class="spinner" aria-hidden="true"></div>
+        <span>Solving&hellip;</span>
+      </div>
+    </div>
+
+    <div class="panel-stats">
+      <div class="stat">
+        <div class="stat-name">Time</div>
+        <div class="stat-val orange" id="pdb-time">—</div>
+      </div>
+      <div class="stat">
+        <div class="stat-name">Optimal Moves</div>
+        <div class="stat-val" id="pdb-moves">—</div>
+      </div>
+      <div class="stat stat-wide">
+        <div class="stat-name">States Explored</div>
+        <div class="stat-val" id="pdb-states">—</div>
+      </div>
+    </div>
+
+    <div class="panel-status waiting" id="pdb-status">Waiting</div>
+  </section>
+
+  <!-- Right: L字 -->
+  <section class="panel duel-panel" id="panel-staged" aria-label="L字段階解法">
+    <div class="panel-header">
+      <div class="panel-header-left">
+        <span class="algo-badge duel-badge-staged">L字</span>
+        <span class="algo-desc">段階的解法 &middot; ペアBFS &middot; 非最適・高速</span>
+      </div>
+      <span class="duel-label-contrast">⚡ 速いが遠回り</span>
+    </div>
+
+    <div class="grid" id="grid-staged">
+      <div id="loading-staged" class="loading-overlay hidden" aria-live="polite">
+        <div class="spinner" aria-hidden="true"></div>
+        <span>Solving&hellip;</span>
+      </div>
+    </div>
+
+    <div class="panel-stats">
+      <div class="stat">
+        <div class="stat-name">Time</div>
+        <div class="stat-val green" id="staged-time">—</div>
+      </div>
+      <div class="stat">
+        <div class="stat-name">Total Moves</div>
+        <div class="stat-val" id="staged-moves">—</div>
+      </div>
+    </div>
+
+    <div class="duel-phase-box" id="phase-box">
+      <span class="duel-phase-label">Phase</span>
+      <span class="duel-phase-name" id="phase-name">—</span>
+    </div>
+
+    <div class="panel-status waiting" id="staged-status">Waiting</div>
+  </section>
+
+</div>
+
+<script src="duel.js"></script>
+</body>
+</html>
